@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tea Factory Management System</title>
+    <!-- CSS stylesheet -->
+    <link rel="stylesheet" href="index.css">
+    <!-- Feather Icons for premium vector iconography -->
+    <script src="https://unpkg.com/feather-icons"></script>
+    <!-- Chart.js for premium graphics and reports -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+    <!-- Toast Notifications Container -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- AUTHENTICATION VIEW -->
+    <div id="auth-view" class="auth-wrapper">
+        <div class="auth-container glass-card">
+            <div class="auth-header">
+                <div class="auth-logo">
+                    <i data-feather="feather" style="width: 36px; height: 36px;"></i>
+                </div>
+                <h1 class="auth-title">Ceylon Tea Factory</h1>
+                <p class="auth-subtitle">Management Portal</p>
+            </div>
+            
+            <form id="login-form" onsubmit="event.preventDefault(); handleLogin();">
+                <div class="form-group">
+                    <label for="login-phone">Phone Number</label>
+                    <input type="text" id="login-phone" class="glass-input" placeholder="e.g. 0771234567" required>
+                </div>
+                <div class="form-group" style="margin-bottom: 24px;">
+                    <label for="login-password">Password</label>
+                    <input type="password" id="login-password" class="glass-input" placeholder="••••••••" required>
+                </div>
+                <button type="submit" class="btn btn-primary" style="width: 100%; height: 48px;">
+                    <i data-feather="log-in"></i> Sign In
+                </button>
+            </form>
+            
+            <div style="margin-top: 24px; text-align: center; font-size: 0.8rem; color: var(--text-secondary);">
+                <p>Default accounts:</p>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; text-align: left; padding: 10px; background: rgba(255,255,255,0.03); border-radius: 6px;">
+                    <div><strong>Owner:</strong> 0771112222 / owner123</div>
+                    <div><strong>Supervisor:</strong> 0773334444 / super123</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MAIN APP SHELL -->
+    <div id="app-shell" class="app-shell" style="display: none;">
+        
+        <!-- Sidebar Navigation -->
+        <aside id="sidebar-nav" class="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-logo">
+                    <i data-feather="activity"></i>
+                </div>
+                <div>
+                    <h1 class="sidebar-title">TeaFactory</h1>
+                    <span style="font-size: 0.7rem; color: var(--primary-light); font-weight: 600; text-transform: uppercase;">Management v1.0</span>
+                </div>
+            </div>
+            
+            <ul class="sidebar-menu">
+                <!-- Owner & Supervisor Options will render dynamically -->
+                <li id="menu-dashboard" class="menu-item active" onclick="switchTab('dashboard')">
+                    <i data-feather="grid"></i>
+                    <span>Dashboard</span>
+                </li>
+                <li id="menu-supervisors" class="menu-item role-owner" onclick="switchTab('supervisors')">
+                    <i data-feather="users"></i>
+                    <span>Supervisors</span>
+                </li>
+                <li id="menu-servants" class="menu-item role-owner-supervisor" onclick="switchTab('servants')">
+                    <i data-feather="user-check"></i>
+                    <span>Servants</span>
+                </li>
+                <li id="menu-attendance" class="menu-item role-supervisor" onclick="switchTab('attendance')">
+                    <i data-feather="calendar"></i>
+                    <span>Mark Attendance</span>
+                </li>
+                <li id="menu-weights" class="menu-item role-supervisor" onclick="switchTab('weights')">
+                    <i data-feather="scale"></i>
+                    <span>Tea Weight Entry</span>
+                </li>
+                <li id="menu-salary" class="menu-item role-owner" onclick="switchTab('salary')">
+                    <i data-feather="credit-card"></i>
+                    <span>Salary Center</span>
+                </li>
+                <li id="menu-reports" class="menu-item role-owner" onclick="switchTab('reports')">
+                    <i data-feather="bar-chart-2"></i>
+                    <span>Analytics Reports</span>
+                </li>
+                <li id="menu-servant-records" class="menu-item role-servant" onclick="switchTab('servant-records')">
+                    <i data-feather="file-text"></i>
+                    <span>My Activity Log</span>
+                </li>
+            </ul>
+            
+            <div class="sidebar-footer">
+                <div class="user-badge">
+                    <div id="user-avatar" class="user-avatar">OW</div>
+                    <div class="user-info">
+                        <span id="user-display-name" class="user-name">Owner User</span>
+                        <span id="user-display-role" class="user-role">Owner</span>
+                    </div>
+                </div>
+                <button class="btn-logout" title="Sign Out" onclick="handleLogout()">
+                    <i data-feather="log-out"></i>
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            
+            <!-- Top Navbar -->
+            <header class="top-nav">
+                <div class="page-title-area">
+                    <button id="mobile-toggle" class="mobile-nav-toggle" onclick="toggleMobileSidebar()" style="margin-right: 15px; display: inline-flex; align-items: center; justify-content: center; vertical-align: middle;">
+                        <i data-feather="menu"></i>
+                    </button>
+                    <h2 id="current-tab-title" style="display: inline-block; vertical-align: middle;">Dashboard Overview</h2>
+                </div>
+                
+                <div class="page-actions">
+                    <div style="background: rgba(255,255,255,0.05); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 16px; font-weight: 500; font-size: 0.85rem; display: flex; align-items: center; gap: 8px;">
+                        <i data-feather="clock" style="color: var(--primary-light); width: 16px; height: 16px;"></i>
+                        <span id="live-time">May 26, 2026</span>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Dashboard Content Container -->
+            <div class="dashboard-container">
+                
+                <!-- ============================================== -->
+                <!-- 1. GENERIC DASHBOARD OVERVIEW -->
+                <!-- ============================================== -->
+                <div id="view-dashboard" class="dashboard-view active">
+                    
+                    <!-- Dynamic Hero banner for Owner / Supervisor / Servant -->
+                    <div class="hero-banner">
+                        <div class="hero-text">
+                            <h1 id="hero-welcome">Welcome Back, Owner!</h1>
+                            <p id="hero-desc">Automate worker check-ins, record tea weight with dynamic rainy day deductions, and run smart 10-day salary cycles in one unified dashboard.</p>
+                        </div>
+                        <i data-feather="cloud-sun" style="width: 80px; height: 80px; color: var(--primary-light); opacity: 0.15;"></i>
+                    </div>
+
+                    <!-- Statistics Cards Row -->
+                    <div id="dashboard-stats" class="stats-grid">
+                        <!-- Stats filled by Javascript -->
+                    </div>
+
+                    <!-- Layout split for widgets -->
+                    <div class="charts-grid">
+                        
+                        <!-- Main Analytics or Recent Logs depending on role -->
+                        <div class="glass-card chart-card">
+                            <div class="chart-header">
+                                <h3 id="panel-main-title" class="chart-title">Tea Production Analytics</h3>
+                                <div id="panel-main-badge" class="badge badge-success">Live Updates</div>
+                            </div>
+                            <div id="panel-main-body" class="chart-body">
+                                <canvas id="dashboardMainChart"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- Sidebar helper widget depending on role -->
+                        <div class="glass-card chart-card">
+                            <div class="chart-header">
+                                <h3 id="panel-side-title" class="chart-title">Operational Status</h3>
+                            </div>
+                            <div id="panel-side-body" class="chart-body" style="display: flex; flex-direction: column; justify-content: center;">
+                                <!-- Dynamically loaded widget -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ============================================== -->
+                <!-- 2. SUPERVISORS MANAGEMENT VIEW (OWNER ONLY) -->
+                <!-- ============================================== -->
+                <div id="view-supervisors" class="dashboard-view">
+                    <div class="glass-card" style="padding: 24px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                            <h3 class="chart-title">Active Field Supervisors</h3>
+                            <button class="btn btn-primary btn-sm" onclick="openAddUserModal('supervisor')">
+                                <i data-feather="plus"></i> Add Supervisor
+                            </button>
+                        </div>
+                        <div class="data-table-container">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>User ID</th>
+                                        <th>Name</th>
+                                        <th>Gender</th>
+                                        <th>Phone</th>
+                                        <th>Assigned Area</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="supervisors-table-body">
+                                    <!-- Rendered dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ============================================== -->
+                <!-- 3. SERVANTS MANAGEMENT VIEW (OWNER / SUPERVISOR) -->
+                <!-- ============================================== -->
+                <div id="view-servants" class="dashboard-view">
+                    <div class="glass-card" style="padding: 24px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                            <h3 class="chart-title">Registered Servants (Workers)</h3>
+                            <button class="btn btn-primary btn-sm" onclick="openAddUserModal('servant')">
+                                <i data-feather="plus"></i> Add Servant
+                            </button>
+                        </div>
+                        <div class="data-table-container">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>User ID</th>
+                                        <th>Name</th>
+                                        <th>Gender</th>
+                                        <th>Work Type</th>
+                                        <th>Phone</th>
+                                        <th>Status</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="servants-table-body">
+                                    <!-- Rendered dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ============================================== -->
+                <!-- 4. ATTENDANCE RECORDER VIEW (SUPERVISOR ONLY) -->
+                <!-- ============================================== -->
+                <div id="view-attendance" class="dashboard-view">
+                    <div class="glass-card" style="padding: 24px; margin-bottom: 24px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px;">
+                            <div>
+                                <h3 class="chart-title">Mark Servant Attendance</h3>
+                                <p style="color: var(--text-secondary); font-size: 0.85rem;">Select date and log check-in/out times for servants.</p>
+                            </div>
+                            <div>
+                                <input type="date" id="attendance-date" class="glass-input" style="width: 200px;" onchange="loadAttendanceSheet()">
+                            </div>
+                        </div>
+                        
+                        <div class="data-table-container">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Servant</th>
+                                        <th>Work Type</th>
+                                        <th>Gender</th>
+                                        <th>Status</th>
+                                        <th>Check-In</th>
+                                        <th>Check-Out</th>
+                                        <th>Action Log</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="attendance-table-body">
+                                    <!-- Populated dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ============================================== -->
+                <!-- 5. TEA WEIGHT COLLECTION ENTRY (SUPERVISOR ONLY) -->
+                <!-- ============================================== -->
+                <div id="view-weights" class="dashboard-view">
+                    <div style="display: grid; grid-template-columns: 1.2fr 2fr; gap: 24px; align-items: start;">
+                        
+                        <!-- Weight entry form -->
+                        <div class="glass-card" style="padding: 24px;">
+                            <h3 class="chart-title" style="margin-bottom: 20px;">Measure & Log Tea Bag</h3>
+                            
+                            <form id="weight-entry-form" onsubmit="event.preventDefault(); submitTeaWeight();">
+                                <div class="form-group">
+                                    <label for="weight-servant-select">Select Tea Collector Servant</label>
+                                    <select id="weight-servant-select" class="glass-input" required>
+                                        <!-- Tea collectors only -->
+                                    </select>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="weight-area-select">Work Area / Estate Section</label>
+                                    <select id="weight-area-select" class="glass-input" required>
+                                        <option value="Tea Field A">Tea Field A</option>
+                                        <option value="Tea Field B">Tea Field B</option>
+                                        <option value="Factory Processing">Factory Processing</option>
+                                        <option value="Packaging Section">Packaging Section</option>
+                                    </select>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="weight-original">Original Measured Weight (kg)</label>
+                                    <input type="number" id="weight-original" step="0.1" min="0.5" class="glass-input" placeholder="e.g. 50.0" oninput="updateRainyPreview()" required>
+                                </div>
+                                
+                                <div class="switch-container">
+                                    <div class="switch-label">
+                                        <i data-feather="cloud-rain" style="color: var(--secondary);"></i>
+                                        <div>
+                                            <div class="switch-title">Rainy Day Adjustment</div>
+                                            <div class="switch-desc">Subtracts 1kg per every 20kg</div>
+                                        </div>
+                                    </div>
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" id="weight-rainy-toggle" onchange="updateRainyPreview()">
+                                        <span class="slider"></span>
+                                    </label>
+                                </div>
+                                
+                                <!-- Live Rainy Day calculation preview -->
+                                <div id="rainy-preview" class="rainy-preview-card" style="display: none;">
+                                    <div class="rainy-preview-val">
+                                        <h5>Original</h5>
+                                        <span id="preview-original">0.0 kg</span>
+                                    </div>
+                                    <div style="font-size: 1.5rem; color: var(--danger); font-weight: 700;">-</div>
+                                    <div class="rainy-preview-val">
+                                        <h5>Deduction</h5>
+                                        <span id="preview-deduction" style="color: var(--danger);">0.0 kg</span>
+                                    </div>
+                                    <div style="font-size: 1.5rem; color: var(--primary); font-weight: 700;">=</div>
+                                    <div class="rainy-preview-val final">
+                                        <h5>Adjusted</h5>
+                                        <span id="preview-final">0.0 kg</span>
+                                    </div>
+                                </div>
+                                
+                                <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 20px; height: 44px;">
+                                    <i data-feather="save"></i> Save Weighing Record
+                                </button>
+                            </form>
+                        </div>
+
+                        <!-- Historical tea collections of the day -->
+                        <div class="glass-card" style="padding: 24px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                                <h3 class="chart-title">Daily Weight Records Log</h3>
+                                <div id="today-total-weight-badge" class="badge badge-info">Total Today: 0 kg</div>
+                            </div>
+                            <div class="data-table-container">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Date</th>
+                                            <th>Servant</th>
+                                            <th>Area</th>
+                                            <th>Original</th>
+                                            <th>Condition</th>
+                                            <th>Final Adjusted</th>
+                                            <th>Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="daily-weights-table-body">
+                                        <!-- Loaded dynamically -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ============================================== -->
+                <!-- 6. SALARY CENTER VIEW (OWNER ONLY) -->
+                <!-- ============================================== -->
+                <div id="view-salary" class="dashboard-view">
+                    
+                    <!-- Top section showing rates configuration -->
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px;">
+                        
+                        <!-- Rate Settings -->
+                        <div class="glass-card" style="padding: 24px;">
+                            <h3 class="chart-title" style="margin-bottom: 16px;">Tea Collection Rates Config</h3>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="rate-above-80">Above 80% Attendance (Per kg)</label>
+                                    <input type="number" id="rate-above-80" class="glass-input" value="60" onchange="saveGlobalRates()">
+                                </div>
+                                <div class="form-group">
+                                    <label for="rate-70-80">70% - 80% Attendance (Per kg)</label>
+                                    <input type="number" id="rate-70-80" class="glass-input" value="50" onchange="saveGlobalRates()">
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="rate-below-70">Below 70% Attendance (Per kg)</label>
+                                <input type="number" id="rate-below-70" class="glass-input" value="40" onchange="saveGlobalRates()">
+                            </div>
+                        </div>
+
+                        <!-- Retail daily rate config -->
+                        <div class="glass-card" style="padding: 24px;">
+                            <h3 class="chart-title" style="margin-bottom: 16px;">Retail Work Rates Config</h3>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="rate-male-daily">Male Daily Wage (Rs.)</label>
+                                    <input type="number" id="rate-male-daily" class="glass-input" value="2000" onchange="saveGlobalRates()">
+                                </div>
+                                <div class="form-group">
+                                    <label for="rate-female-daily">Female Daily Wage (Rs.)</label>
+                                    <input type="number" id="rate-female-daily" class="glass-input" value="1500" onchange="saveGlobalRates()">
+                                </div>
+                            </div>
+                            <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 14px; padding: 10px; background: rgba(255,255,255,0.02); border-radius: 6px;">
+                                <i data-feather="info" style="width: 14px; height: 14px; vertical-align: middle; color: var(--primary-light);"></i>
+                                <span style="vertical-align: middle;">Rates will take immediate effect on all subsequent 10-day salary run calculations.</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 10-Day Salary Generation Panel -->
+                    <div class="glass-card" style="padding: 24px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px;">
+                            <div>
+                                <h3 class="chart-title">10-Day Salary Cycle Processor</h3>
+                                <p style="color: var(--text-secondary); font-size: 0.85rem;">Specify a 10-day range to compile weights and attendance stats to calculate payout.</p>
+                            </div>
+                            <div style="display: flex; gap: 12px; align-items: center;">
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <input type="date" id="salary-start-date" class="glass-input" style="width: 170px;" onchange="triggerSalaryCompilation()">
+                                </div>
+                                <span style="color: var(--text-secondary);">to</span>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <input type="date" id="salary-end-date" class="glass-input" style="width: 170px;" onchange="triggerSalaryCompilation()">
+                                </div>
+                                <button class="btn btn-primary" onclick="compileSalaryRun()">
+                                    <i data-feather="cpu"></i> Compute Salaries
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Computed Sheet Table -->
+                        <div class="data-table-container">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Servant ID</th>
+                                        <th>Servant Name</th>
+                                        <th>Work Type</th>
+                                        <th>Attendance %</th>
+                                        <th>Total Weight / Days</th>
+                                        <th>Payment Rate</th>
+                                        <th>Calculated Salary</th>
+                                        <th>Status</th>
+                                        <th>Payment Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="salary-table-body">
+                                    <tr>
+                                        <td colspan="9" style="text-align: center; color: var(--text-secondary); padding: 30px;">
+                                            Select a valid 10-day date range and click "Compute Salaries".
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ============================================== -->
+                <!-- 7. ANALYTICS & REPORTS (OWNER ONLY) -->
+                <!-- ============================================== -->
+                <div id="view-reports" class="dashboard-view">
+                    
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px;">
+                        
+                        <div class="glass-card" style="padding: 24px; min-height: 380px; display: flex; flex-direction: column;">
+                            <h3 class="chart-title" style="margin-bottom: 20px;">10-Day Tea Weight vs Salary Trends</h3>
+                            <div style="flex-grow: 1; position: relative;">
+                                <canvas id="reportChartSalaryWeight"></canvas>
+                            </div>
+                        </div>
+
+                        <div class="glass-card" style="padding: 24px; min-height: 380px; display: flex; flex-direction: column;">
+                            <h3 class="chart-title" style="margin-bottom: 20px;">Rainy Day Deductions Breakdown</h3>
+                            <div style="flex-grow: 1; position: relative;">
+                                <canvas id="reportChartRainyDeduction"></canvas>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Worker productivity ranking table -->
+                    <div class="glass-card" style="padding: 24px;">
+                        <h3 class="chart-title" style="margin-bottom: 20px;">Top Worker Productivity Leaderboard</h3>
+                        <div class="data-table-container">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Rank</th>
+                                        <th>Servant Name</th>
+                                        <th>Work Area Profile</th>
+                                        <th>Total Original Weight</th>
+                                        <th>Deducted Rain Weight</th>
+                                        <th>Final Net Collected</th>
+                                        <th>Attendance Stats</th>
+                                        <th>Overall Efficiency</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="leaderboard-table-body">
+                                    <!-- Rendered dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ============================================== -->
+                <!-- 8. SERVANT PERSONAL ACTIVITY VIEW (SERVANT ONLY) -->
+                <!-- ============================================== -->
+                <div id="view-servant-records" class="dashboard-view">
+                    
+                    <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 24px; align-items: start; margin-bottom: 24px;">
+                        
+                        <!-- Servant's tea weight history table -->
+                        <div class="glass-card" style="padding: 24px;">
+                            <h3 class="chart-title" style="margin-bottom: 20px;">My Personal Tea Collection History</h3>
+                            <div class="data-table-container">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Date</th>
+                                            <th>Estate Field</th>
+                                            <th>Original Weight</th>
+                                            <th>Rainy Day?</th>
+                                            <th>Deduction</th>
+                                            <th>Adjusted Weight (Net)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="servant-my-weighings">
+                                        <!-- Loaded dynamically -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- Servant's personal attendance history -->
+                        <div class="glass-card" style="padding: 24px;">
+                            <h3 class="chart-title" style="margin-bottom: 20px;">My Attendance Log</h3>
+                            <div class="data-table-container">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Date</th>
+                                            <th>Check-In</th>
+                                            <th>Check-Out</th>
+                                            <th>Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="servant-my-attendance">
+                                        <!-- Loaded dynamically -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </main>
+    </div>
+
+    <!-- ============================================== -->
+    <!-- MODALS SECTION -->
+    <!-- ============================================== -->
+
+    <!-- USER ADD / EDIT MODAL -->
+    <div id="user-modal" class="modal-overlay">
+        <div class="modal-container glass-card">
+            <div class="modal-header">
+                <h3 id="user-modal-title" style="font-size: 1.25rem;">Add Supervisor</h3>
+                <button class="modal-close" onclick="closeUserModal()">
+                    <i data-feather="x"></i>
+                </button>
+            </div>
+            
+            <form id="user-form" onsubmit="event.preventDefault(); saveUser();">
+                <input type="hidden" id="user-modal-id">
+                <input type="hidden" id="user-modal-role">
+                
+                <div class="form-group">
+                    <label for="user-name">Full Name</label>
+                    <input type="text" id="user-name" class="glass-input" placeholder="e.g. Sunil Perera" required>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="user-gender">Gender</label>
+                        <select id="user-gender" class="glass-input" required>
+                            <option value="Male">Male</option>
+                            <option value="Female">Female</option>
+                        </select>
+                    </div>
+                    
+                    <div id="user-work-type-container" class="form-group" style="display: none;">
+                        <label for="user-work-type">Work Type</label>
+                        <select id="user-work-type" class="glass-input">
+                            <option value="Tea Collector">Tea Collector</option>
+                            <option value="Retail Worker">Retail Worker</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="user-phone">Phone Number</label>
+                    <input type="text" id="user-phone" class="glass-input" placeholder="e.g. 0773334444" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="user-password">Account Password</label>
+                    <input type="password" id="user-password" class="glass-input" placeholder="••••••••" required>
+                </div>
+                
+                <div class="form-group" id="user-area-container">
+                    <label for="user-area">Assigned Operational Section</label>
+                    <select id="user-area" class="glass-input">
+                        <option value="Tea Field A">Tea Field A</option>
+                        <option value="Tea Field B">Tea Field B</option>
+                        <option value="Factory Processing">Factory Processing</option>
+                        <option value="Packaging Section">Packaging Section</option>
+                    </select>
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px;">
+                    <button type="button" class="btn btn-secondary" onclick="closeUserModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Details</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MAIN JAVASCRIPT SYSTEM CODE -->
+    <script src="app.js"></script>
+</body>
+</html>
