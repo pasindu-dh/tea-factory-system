@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Runtime data (SQLite DB, generated secret key)
+instance/
+
+# Editors / OS
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini

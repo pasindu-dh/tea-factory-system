@@ -468,7 +468,7 @@ h1, h2, h3, h4, h5, h6 {
 
 /* Main Visual Banner */
 .hero-banner {
-    background: linear-gradient(rgba(11, 15, 25, 0.6), rgba(11, 15, 25, 0.9)), url('tea_bg.png') no-repeat center center;
+    background: linear-gradient(rgba(11, 15, 25, 0.6), rgba(11, 15, 25, 0.9)), url('../img/tea_bg.png') no-repeat center center;
     background-size: cover;
     border-radius: var(--radius-md);
     border: 1px solid var(--border);
@@ -1000,5 +1000,156 @@ input:checked + .slider:before {
     
     .hero-banner img {
         display: none;
+    }
+}
+
+/* ==========================================
+   V2 ADDITIONS
+   ========================================== */
+
+/* Smaller progress rings used by the servant gauge row */
+.attendance-ring-container.ring-sm {
+    width: 122px;
+    height: 122px;
+    margin-bottom: 0;
+}
+
+.attendance-ring-container.ring-sm .attendance-ring {
+    width: 122px;
+    height: 122px;
+}
+
+.attendance-ring-container.ring-sm .attendance-pct {
+    font-size: 1rem;
+}
+
+.attendance-ring-container.ring-sm .attendance-label {
+    font-size: 0.6rem;
+}
+
+.attendance-ring-container.ring-sm .ring-circle-bg,
+.attendance-ring-container.ring-sm .ring-circle-val {
+    stroke-width: 8;
+}
+
+.ring-circle-val.ring-gauge {
+    stroke: var(--secondary);
+}
+
+.gauge-row {
+    display: flex;
+    gap: 18px;
+    justify-content: center;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+}
+
+.gauge-caption {
+    text-align: center;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+}
+
+/* Payslip modal */
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    margin-top: 24px;
+    flex-wrap: wrap;
+}
+
+.payslip-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding-bottom: 14px;
+    margin-bottom: 14px;
+    border-bottom: 1px solid var(--border);
+}
+
+.payslip-header h2 {
+    font-family: var(--font-heading);
+    font-size: 1.15rem;
+}
+
+.payslip-header p {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.payslip-ref {
+    text-align: right;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.payslip-table th {
+    text-align: left;
+}
+
+.payslip-total {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 16px;
+    padding: 14px 16px;
+    border-radius: var(--radius-sm);
+    background: var(--primary-glow);
+    border: 1px solid var(--primary);
+}
+
+.payslip-total span {
+    font-weight: 600;
+}
+
+.payslip-total strong {
+    font-size: 1.25rem;
+    color: var(--primary-light);
+    font-family: var(--font-heading);
+}
+
+/* Printing shows only the payslip */
+@media print {
+    body * {
+        visibility: hidden;
+    }
+
+    #payslip-modal.active,
+    #payslip-modal.active * {
+        visibility: visible;
+    }
+
+    #payslip-modal.active {
+        position: absolute;
+        inset: 0;
+        background: #ffffff;
+        display: block;
+    }
+
+    #payslip-modal.active .modal-container {
+        box-shadow: none;
+        border: none;
+        background: #ffffff;
+        color: #0f172a;
+        max-width: 100%;
+    }
+
+    #payslip-modal.active .modal-close,
+    #payslip-modal.active .modal-actions {
+        display: none;
+    }
+
+    #payslip-modal.active .payslip-total {
+        background: #f1f5f9;
+        border-color: #cbd5e1;
+    }
+
+    #payslip-modal.active .payslip-total strong,
+    #payslip-modal.active .data-table th,
+    #payslip-modal.active .data-table td {
+        color: #0f172a !important;
+        border-color: #cbd5e1 !important;
     }
 }

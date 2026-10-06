@@ -1,105 +1,125 @@
-# 🍃 Tea Factory Management System
+# 🍃 Ceylon Tea Factory — Management System
 
-A high-fidelity, self-contained single-page management portal developed to automate and optimize the daily operations of a tea factory. The system features a premium glassmorphic dark-emerald user interface, dynamic role-based dashboards, and pre-populated mock ledger data for the last 10 days of factory operations.
+A complete tea factory management portal: attendance timecards, tea-leaf weighing with
+automatic rainy-day moisture deductions, tiered 10-day payroll, payslips, and analytics —
+served by a Python **Flask + SQLite** backend with real login sessions and role-based access.
 
----
+## Features
 
-## 🚀 Key Modules & Features
+### Owner (main administrator)
+- Add / edit / deactivate / delete Field Supervisors and Servants (CRUD), with password resets.
+- Configure payment rates: per-kg tiers by attendance bracket and retail daily wages.
+- Compile, finalize, and pay **10-day salary runs**; payslips with print and CSV export.
+- Deep analytics: harvest vs **real payroll cost** charts, rainy-day deduction breakdown,
+  work-area distribution, and a productivity leaderboard.
 
-### 🔐 1. Authentication & Role-Based Access Control
-- **Owner Dashboard (Main Administrator)**:
-  - Add, edit, or remove Field Supervisors and Servant profiles (CRUD).
-  - Configure payment rates per kg (tiered by attendance) and daily wages for retail workers.
-  - Compute and process 10-day salary runs.
-  - Review deep analytics dashboards, leaderboards, and rainy day adjustments.
-- **Supervisor Dashboard (Field Operator)**:
-  - Register new Servant profiles.
-  - Mark daily attendance timecards (automatic "Present/Absent" toggling upon check-in/out logging).
-  - Measure and record tea bag weights with real-time **Rainy Day Deductions**.
-  - Assign servants daily work areas (Tea fields, processing, packaging).
-- **Servant Dashboard (Worker View)**:
-  - Interactive SVG attendance progress ring tracking current payroll bracket status.
-  - Estimated 10-day salary gauge based on cumulative harvest and attendance category.
-  - Personal chronological ledger showing daily weighings and check-in/out timestamps.
+### Field Supervisor
+- Register new servant profiles.
+- Mark daily attendance timecards — status becomes *Present* automatically on check-in.
+- Record tea bag weights with a live **rainy-day deduction** preview.
+- Assign every servant a **daily work area** (Tea Field A/B, Factory Processing, Packaging).
 
-### 🌧️ 2. Rainy Day Weight Adjustment System
-During rainy days, raw tea leaves absorb moisture, skewing true leaf weight. The system automatically reduces leaf weight at a rate of **1kg per every 20kg** of raw tea:
-$$\text{Adjusted Weight} = \text{Original Weight} - \frac{\text{Original Weight}}{20}$$
+### Servant (worker view)
+- Live **attendance ring** and **estimated-salary gauge** for the current payroll cycle,
+  with the active rate bracket highlighted.
+- Personal ledger: every weighing, every check-in/out timestamp, and salary history
+  with printable payslips.
 
-*   **Example 1**: Raw weight $100\text{ kg} \rightarrow 100 - (100 / 20) = 95\text{ kg}$ final adjusted weight.
-*   **Example 2**: Raw weight $50\text{ kg} \rightarrow 50 - (50 / 20) = 47.5\text{ kg}$ final adjusted weight.
+## Business rules (single source of truth: `payroll.py`)
 
-### 💰 3. Tiered 10-Day Payroll Engine
-Salaries compile every 10 days, applying different rates based on worker attendance percentages:
-- **Tea Collectors**: Paid per kilogram collected, depending on attendance bracket:
-  - **Attendance > 80%**: Rs. 60 per 1kg
-  - **Attendance 70% - 80%**: Rs. 50 per 1kg
-  - **Attendance < 70%**: Rs. 40 per 1kg
-  $$\text{Salary} = \text{Adjusted Tea Weight} \times \text{Rate Per Kg}$$
-- **Retail Workers**: Paid a flat daily rate compiled against presence counts:
-  - **Male**: Rs. 2000 / Day
-  - **Female**: Rs. 1500 / Day
-  $$\text{Salary} = \text{Days Present} \times \text{Daily Wage}$$
+| Rule | Formula |
+|---|---|
+| Rainy-day moisture deduction | `adjusted = original − original / 20` (1 kg per 20 kg) |
+| Tea Collector pay | `adjusted kg × rate`, rate by attendance bracket |
+| — bracket > 80 % | Rs. 60 / kg (configurable) |
+| — bracket 70 – 80 % | Rs. 50 / kg (configurable) |
+| — bracket < 70 % | Rs. 40 / kg (configurable) |
+| Retail Worker pay | `days present × daily wage` (Male Rs. 2000 / Female Rs. 1500) |
+| Payroll cycle | exactly 10 days; runs snapshot the rates in force at compile time |
 
----
+Attendance percentage is computed in exactly one place (`payroll.attendance_pct`, half-up
+rounding) and every screen reads it from `/api/attendance/summary` or `/api/dashboard`.
 
-## 👤 Default Testing Accounts
+## Setup (Windows)
 
-To log in and experience the interface, use the following pre-registered credentials:
+Python 3.12 is required. If it is not installed:
 
-| Role | Name | Phone Number | Password | Features Accessible |
-| :--- | :--- | :--- | :--- | :--- |
-| **Owner** | Aruna Perera | `0771112222` | `owner123` | Full CRUD, Salary Run, Configuration, Charts |
-| **Supervisor** | Kamal Silva | `0773334444` | `super123` | Mark Attendance, Assign Areas, Record Weights |
-| **Servant (Collector)** | Kusal Mendis | `0777778888` | `servant123` | Personal weights ledger, Attendance ring, Salary Estimator |
-| **Servant (Retail)** | Chamari Athapaththu | `0774445555` | `servant123` | Retail wages policy indicator, Attendance log |
-
----
-
-## 🛠️ Technology Stack
-- **Structure**: Semantic HTML5 markup.
-- **Styling**: Vanilla CSS3 custom property grid, responsive media queries, glassmorphism filters, and micro-interaction scale triggers.
-- **Logic**: ES6+ JavaScript modules.
-- **Simulated Database**: Persistent client-side database utilizing `localStorage` initialized with 10 days of historical timelines.
-- **Vector Icons**: Feather Icons via CDN.
-- **Reporting Engine**: Chart.js canvas graph animations.
-
----
-
-## 💻 Running the Portal Locally
-
-The system runs entirely in the browser with **zero local setup requirements** (no local database servers, python packages, or node installations required).
-
-### Method A: Direct Browser Load
-1. Double-click [index.html](index.html) or drag it into any modern web browser (Chrome, Edge, Firefox, Safari).
-
-### Method B: Via Local Dev Server (Recommended)
-To prevent browser sandbox warnings and enable high-fidelity font loading, launch a quick static server:
-
-*   **Using Python (Pre-installed on macOS/Windows)**:
-    ```powershell
-    # Open terminal in project folder and run:
-    python -m http.server 8000
-    ```
-    Then visit `http://localhost:8000` in your web browser.
-
-*   **Using Node.js (npx serve)**:
-    ```powershell
-    # Open terminal in project folder and run:
-    npx -y serve
-    ```
-    Then visit the local address displayed in the terminal.
-
----
-
-## 📂 Project Directory Structure
-
-```text
-Tea Factory/
-│
-├── index.html       # Primary layout, sidebars, dashboard grids, and forms
-├── index.css        # Premium custom stylesheet, fonts, badges, variables, widgets
-├── app.js           # Database, state manager, auth controller, formulas, payroll run
-├── tea_bg.png       # Cinematic wide background banner of tea estate
-└── README.md        # Technical portal manuals (This file)
+```powershell
+winget install -e --id Python.Python.3.12
 ```
+
+Then, from the project folder:
+
+```powershell
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1          # if blocked: Set-ExecutionPolicy -Scope Process Bypass
+pip install -r requirements.txt -r requirements-dev.txt
+flask --app app init-db --seed        # create instance/tea_factory.sqlite3 + demo data
+flask --app app run --host=0.0.0.0 --port=5000
+```
+
+Open <http://127.0.0.1:5000>. Other devices on the same network can use
+`http://<this-pc-ip>:5000`.
+
+For a longer-running LAN deployment use waitress instead of the dev server:
+
+```powershell
+waitress-serve --host=0.0.0.0 --port=5000 app:app
+```
+
+### Default accounts (demo data)
+
+| Role | Phone | Password |
+|---|---|---|
+| Owner | 0771112222 | owner123 |
+| Supervisor | 0773334444 | super123 |
+| Supervisor | 0775556666 | super123 |
+| Tea Collector | 0777778888 | servant123 |
+| Tea Collector | 0779990000 | servant123 |
+| Retail Worker | 0772223333 | servant123 |
+| Retail Worker | 0774445555 | servant123 |
+
+Demo data is deterministic and anchored to the real current date: the previous 10-day
+cycle is seeded fully with a finalized, paid payroll run, and the current cycle is seeded
+up to today. Re-run `flask --app app init-db --force --seed` to reset.
+
+## Tests
+
+```powershell
+py -m pytest -q
+```
+
+116 tests cover the payroll engine (rainy maths, bracket boundaries at exactly 70 %/80 %,
+half-up rounding, cycle helpers), authentication, role enforcement, every API endpoint,
+payslip/CSV export, and the reports aggregates.
+
+## Project layout
+
+```
+app.py            Flask factory, security headers (CSP), CLI (init-db)
+config.py         Domain constants and configuration
+schema.sql        SQLite schema
+db.py             Request-scoped SQLite connection (WAL, foreign keys)
+auth.py           Sessions, password hashing, role decorators, login throttle
+payroll.py        Pure payroll engine — no Flask/DB imports
+seed.py           Deterministic demo data
+api/              Blueprints: users, attendance, weights, assignments, rates,
+                  payroll, dashboard, reports
+templates/        index.html (single-page UI)
+static/           css/, js/ (api.js, ui.js, app.js), vendored Chart.js & Feather, img/
+tests/            pytest suite
+instance/         SQLite database + generated secret key (gitignored)
+```
+
+## Operational notes
+
+- **Security**: passwords are hashed (Werkzeug), sessions are signed HttpOnly cookies,
+  roles are enforced server-side, all rendered user input is escaped, and a strict
+  Content-Security-Policy blocks inline script.
+- **OneDrive**: the default database lives in `instance/`. If you sync this folder with
+  OneDrive, point the database elsewhere for reliability, e.g.
+  `$env:TEA_FACTORY_DB = "$env:LOCALAPPDATA\TeaFactory\tea_factory.sqlite3"`.
+- **Secret key**: generated once into `instance/secret_key`; set `TEA_FACTORY_SECRET_KEY`
+  to override.
+- Sessions run over plain HTTP on the LAN. Put the app behind HTTPS if it is ever exposed
+  beyond the local network (then set `SESSION_COOKIE_SECURE`).

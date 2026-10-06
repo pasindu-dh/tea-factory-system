@@ -1,0 +1,69 @@
+"""SQLite access helpers: one connection per request, WAL mode, FK enforcement."""
+from __future__ import annotations
+
+import sqlite3
+from pathlib import Path
+
+from flask import current_app, g
+
+SCHEMA_FILE = Path(__file__).resolve().parent / "schema.sql"
+
+
+def get_db() -> sqlite3.Connection:
+    """Return the request-scoped connection, opening it on first use."""
+    if "db" not in g:
+        conn = sqlite3.connect(
+            current_app.config["DATABASE"],
+            detect_types=sqlite3.PARSE_DECLTYPES,
+            timeout=5.0,
+        )
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("PRAGMA busy_timeout = 5000")
+        g.db = conn
+    return g.db
+
+
+def close_db(_exc=None) -> None:
+    conn = g.pop("db", None)
+    if conn is not None:
+        conn.close()
+
+
+def query_all(sql: str, params=()) -> list[sqlite3.Row]:
+    return get_db().execute(sql, params).fetchall()
+
+
+def query_one(sql: str, params=()) -> sqlite3.Row | None:
+    return get_db().execute(sql, params).fetchone()
+
+
+def execute(sql: str, params=()) -> sqlite3.Cursor:
+    conn = get_db()
+    cur = conn.execute(sql, params)
+    conn.commit()
+    return cur
+
+
+def execute_many(sql: str, seq) -> sqlite3.Cursor:
+    conn = get_db()
+    cur = conn.executemany(sql, seq)
+    conn.commit()
+    return cur
+
+
+def init_db(app) -> None:
+    """Create the database file (if needed) and apply the schema."""
+    db_path = Path(app.config["DATABASE"])
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.executescript(SCHEMA_FILE.read_text(encoding="utf-8"))
+        conn.execute("PRAGMA journal_mode = WAL")
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def init_app(app) -> None:
+    app.teardown_appcontext(close_db)
