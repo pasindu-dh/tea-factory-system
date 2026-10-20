@@ -9,6 +9,8 @@ const state = {
     salary: null,
     payslip: null,
     rainyTimer: null,
+    paymentMethod: null,
+    historyServants: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -188,6 +190,15 @@ function applyConfigDefaults() {
     if (userArea && !userArea.options.length) {
         userArea.innerHTML = areas.map((area) => `<option value="${esc(area)}">${esc(area)}</option>`).join('');
     }
+
+    // Seed the payment method from the first configured option. Without this the
+    // run-actions select *displays* "Cash" while state.paymentMethod stays null,
+    // so paying would silently record no method at all -- the visible selection
+    // would not match what gets sent.
+    const methods = (state.config && state.config.payment_methods) || [];
+    if (!state.paymentMethod && methods.length) {
+        state.paymentMethod = methods[0];
+    }
 }
 
 function startClock() {
@@ -224,7 +235,7 @@ const VIEW_LOADERS = {
     dashboard: loadDashboard,
     supervisors: loadSupervisors,
     servants: loadServants,
-    attendance: loadAttendance,
+    attendance: loadAttendanceView,
     weights: loadWeights,
     assignments: loadAssignments,
     salary: loadSalary,
@@ -463,6 +474,79 @@ async function loadAttendance() {
             </td>
         </tr>`).join('') : emptyRow(7, 'No servants registered yet.');
     refreshIcons();
+}
+
+/* The attendance tab holds two independent cards; the day sheet reloads on every
+ * date change, so the history card is loaded once per visit rather than from
+ * loadAttendance(). */
+async function loadAttendanceView() {
+    await loadAttendance();
+    await loadAttendanceHistory();
+}
+
+async function loadAttendanceHistory() {
+    const startInput = $('history-start-date');
+    const endInput = $('history-end-date');
+    const cycle = state.config && state.config.current_cycle;
+
+    if (!startInput.value && cycle) startInput.value = cycle.start;
+    if (!endInput.value && cycle) endInput.value = cycle.end;
+    endInput.max = todayISO();
+
+    // state.collectors is filtered to Tea Collectors, so it must not be reused here.
+    if (!state.historyServants) {
+        const data = await api.get('/api/users?role=servant&active=1');
+        state.historyServants = data.users;
+    }
+    const select = $('history-servant');
+    const previous = select.value;
+    select.innerHTML =
+        '<option value="">All servants</option>' +
+        state.historyServants
+            .map((user) => `<option value="${user.user_id}">${esc(user.name)}</option>`)
+            .join('');
+    if (previous && state.historyServants.some((user) => String(user.user_id) === previous)) {
+        select.value = previous;
+    }
+
+    // The endpoint applies no row limit, so a bounded range is always sent.
+    const params = new URLSearchParams({ start: startInput.value, end: endInput.value });
+    if (select.value) params.set('servant_id', select.value);
+
+    const data = await api.get(`/api/attendance/history?${params}`);
+    const tbody = $('history-table-body');
+    tbody.innerHTML = data.rows.length ? data.rows.map((row) => `
+        <tr>
+            <td>${esc(row.work_date)}</td>
+            <td>
+                <div style="font-weight:600;">${esc(row.servant_name)}</div>
+                <span style="font-size:0.75rem;color:var(--text-secondary);">SRV-${row.servant_id}</span>
+            </td>
+            <td>${esc(row.check_in || '--:--')}</td>
+            <td>${esc(row.check_out || '--:--')}</td>
+            <td>${statusBadge(row.status)}</td>
+        </tr>`).join('') : emptyRow(5, 'No attendance records for this range.');
+
+    await renderHistorySummary(params);
+    refreshIcons();
+}
+
+/* One servant selected -> show the server-computed attendance percentage. It comes
+ * from /api/attendance/summary so the bracket maths is never re-derived in JS. */
+async function renderHistorySummary(params) {
+    const container = $('history-summary');
+    if (!params.get('servant_id')) {
+        container.innerHTML = '';
+        return;
+    }
+
+    const summary = await api.get(`/api/attendance/summary?${params}`);
+    const row = summary.rows[0];
+    container.innerHTML = row
+        ? `<span class="badge badge-info" style="font-size:0.85rem;padding:6px 12px;">
+               Present ${row.present_days} of ${row.period_days} · ${row.attendance_pct}%
+           </span>`
+        : '';
 }
 
 async function saveAttendanceTime(servantId) {
@@ -728,9 +812,21 @@ function renderRunActions(data) {
         return;
     }
 
+    // The bar is re-rendered on every load, so the chosen method lives in state
+    // and is re-marked `selected` here rather than being read back off the DOM.
+    const methods = (state.config && state.config.payment_methods) || ['Cash'];
+    const methodOptions = methods
+        .map((method) => `<option value="${esc(method)}"${state.paymentMethod === method ? ' selected' : ''}>${esc(method)}</option>`)
+        .join('');
+
     bar.style.display = 'flex';
     bar.innerHTML = `
         <span class="badge ${run.status === 'finalized' ? 'badge-success' : 'badge-warning'}" style="align-self:center;">Run #${run.run_id} · ${run.status}</span>
+        <select id="salary-payment-method" class="glass-input" data-change="payment-method"
+                title="How the payment is being made. Recorded against each line you pay."
+                style="width:auto;padding:6px 10px;font-size:0.85rem;">
+            ${methodOptions}
+        </select>
         ${run.status === 'draft'
             ? `<button class="btn btn-secondary btn-sm" data-action="finalize-run" data-run="${run.run_id}"><i data-feather="lock"></i> Finalize</button>`
             : ''}
@@ -756,12 +852,83 @@ async function loadRuns() {
             <td>${run.paid_count} / ${run.servant_count}</td>
             <td style="font-weight:700;color:var(--primary-light);">${fmtMoney(run.total_salary)}</td>
             <td>
-                <button class="btn btn-secondary btn-sm" data-action="export-run" data-run="${run.run_id}"><i data-feather="download"></i> CSV</button>
+                <button class="btn btn-secondary btn-sm" data-action="view-run" data-run="${run.run_id}"><i data-feather="eye"></i> View</button>
+                <button class="btn btn-secondary btn-sm" data-action="export-run" data-run="${run.run_id}" style="margin-left:6px;"><i data-feather="download"></i> CSV</button>
                 ${run.status === 'draft'
                     ? `<button class="btn btn-danger btn-sm" data-action="delete-run" data-run="${run.run_id}" style="margin-left:6px;"><i data-feather="trash-2"></i> Delete</button>`
                     : ''}
             </td>
         </tr>`).join('') : emptyRow(7, 'No payroll runs yet.');
+    refreshIcons();
+}
+
+/* Every line of a single run, with the admin actions that apply to it. */
+async function openRunDetail(runId) {
+    const { run, lines } = await api.get(`/api/payroll/runs/${runId}`);
+
+    // The detail endpoint selects from payroll_runs alone, so unlike the listing
+    // it carries no servant_count / paid_count / total_salary. Derive them here.
+    const paidCount = lines.filter((line) => line.status === 'Paid').length;
+    const total = lines.reduce((sum, line) => sum + (Number(line.total_salary) || 0), 0);
+    const rateRows = Object.entries(run.rates || {})
+        .map(([key, value]) => `<span class="badge badge-info" style="margin-right:6px;">${esc(key)}: ${fmtNumber(value)}</span>`)
+        .join('');
+
+    $('run-modal-body').innerHTML = `
+        <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-bottom:14px;">
+            <span class="badge badge-info">Run #${run.run_id}</span>
+            ${statusBadge(run.status)}
+            <span style="color:var(--text-secondary);font-size:0.9rem;">
+                ${esc(run.period_start)} → ${esc(run.period_end)} (${run.period_days} days)
+            </span>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:20px;margin-bottom:14px;">
+            <div><span style="color:var(--text-secondary);font-size:0.8rem;">Servants</span>
+                 <div style="font-weight:700;">${lines.length}</div></div>
+            <div><span style="color:var(--text-secondary);font-size:0.8rem;">Paid</span>
+                 <div style="font-weight:700;">${paidCount} / ${lines.length}</div></div>
+            <div><span style="color:var(--text-secondary);font-size:0.8rem;">Total</span>
+                 <div style="font-weight:700;color:var(--primary-light);">${fmtMoney(total)}</div></div>
+            <div><span style="color:var(--text-secondary);font-size:0.8rem;">Compiled</span>
+                 <div style="font-size:0.85rem;">${esc(run.compiled_at || '—')}
+                     ${run.compiled_by_name ? `· ${esc(run.compiled_by_name)}` : ''}</div></div>
+            ${run.finalized_at ? `<div><span style="color:var(--text-secondary);font-size:0.8rem;">Finalized</span>
+                 <div style="font-size:0.85rem;">${esc(run.finalized_at)}</div></div>` : ''}
+        </div>
+        <div style="margin-bottom:14px;">${rateRows}</div>
+        <div class="data-table-container">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Servant</th><th>Type</th><th>Attendance</th><th>Output</th>
+                        <th>Rate</th><th>Salary</th><th>Status</th><th>Paid via</th><th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${lines.length ? lines.map((line) => `
+                        <tr>
+                            <td><strong>SRV-${line.servant_id}</strong><br><span style="color:var(--text-secondary);font-size:0.8rem;">${esc(line.name)}</span></td>
+                            <td>${workTypeBadge(line.work_type)}</td>
+                            <td>${pctBadge(line.attendance_pct)}</td>
+                            <td style="font-weight:600;">${esc(line.output_label)}</td>
+                            <td style="color:var(--secondary);font-weight:500;">${esc(line.rate_label)}</td>
+                            <td style="font-weight:700;color:var(--primary-light);">${fmtMoney(line.total_salary)}</td>
+                            <td>${statusBadge(line.status)}</td>
+                            <td>${line.payment_method
+                                ? `${esc(line.payment_method)}${line.payment_ref ? `<br><span style="color:var(--text-secondary);font-size:0.75rem;">${esc(line.payment_ref)}</span>` : ''}`
+                                : '—'}</td>
+                            <td style="white-space:nowrap;">
+                                <button class="btn btn-secondary btn-sm" data-action="view-payslip" data-id="${line.salary_id}"><i data-feather="file-text"></i> Slip</button>
+                                ${line.status === 'Pending'
+                                    ? `<button class="btn btn-primary btn-sm" data-action="run-detail-pay" data-run="${run.run_id}" data-salary="${line.salary_id}" style="margin-left:6px;"><i data-feather="check"></i> Pay</button>`
+                                    : ''}
+                            </td>
+                        </tr>`).join('') : emptyRow(9, 'This run has no lines.')}
+                </tbody>
+            </table>
+        </div>
+    `;
+    openModal('run-modal');
     refreshIcons();
 }
 
@@ -908,6 +1075,9 @@ async function openPayslip(salaryId) {
         ['Rate applied', payslip.rate_label],
         ['Status', payslip.status],
         ['Paid at', payslip.paid_at || '—'],
+        ['Paid via', payslip.payment_method
+            ? `${payslip.payment_method}${payslip.payment_ref ? ` (${payslip.payment_ref})` : ''}`
+            : '—'],
     ];
 
     $('payslip-body').innerHTML = `
@@ -984,6 +1154,14 @@ function bindEvents() {
     registerAction('reset-password', ({ id }) => resetPassword(parseInt(id, 10)));
 
     /* ---- attendance ---- */
+    registerChange('attendance-history', () => loadAttendanceHistory().catch(reportError));
+    registerAction('attendance-history-cycle', () => {
+        const cycle = state.config && state.config.current_cycle;
+        if (!cycle) return;
+        $('history-start-date').value = cycle.start;
+        $('history-end-date').value = cycle.end;
+        loadAttendanceHistory().catch(reportError);
+    });
     registerChange('attendance-date', () => loadAttendance().catch(reportError));
     registerChange('attendance-time', ({ servant }) => {
         saveAttendanceTime(parseInt(servant, 10)).catch((error) => {
@@ -1041,6 +1219,9 @@ function bindEvents() {
     registerAction('compile-run', compileRun);
     registerAction('pay-line', payLine);
     registerAction('pay-run', payRun);
+    registerChange('payment-method', (_dataset, el) => {
+        state.paymentMethod = el.value;
+    });
     registerAction('finalize-run', finalizeRun);
     registerAction('delete-run', deleteRun);
     registerAction('export-run', ({ run }) => {
@@ -1055,6 +1236,15 @@ function bindEvents() {
         $('report-start-date').value = cycle.start;
         $('report-end-date').value = cycle.end;
         loadReports().catch(reportError);
+    });
+
+    /* ---- payroll run detail ---- */
+    registerAction('view-run', ({ run }) => openRunDetail(parseInt(run, 10)).catch(reportError));
+    registerAction('run-detail-pay', async ({ run, salary }) => {
+        await payLine({ run: parseInt(run, 10), salary });
+        // payLine() refreshes the salary table, not this modal, so the row would
+        // otherwise still read "Pending" until the modal is reopened.
+        await openRunDetail(parseInt(run, 10)).catch(reportError);
     });
 
     /* ---- payslip ---- */
@@ -1257,7 +1447,10 @@ async function compileRun() {
 
 async function payLine({ run, salary }) {
     try {
-        await api.post(`/api/payroll/runs/${run}/pay`, { salary_ids: [parseInt(salary, 10)] });
+        await api.post(`/api/payroll/runs/${run}/pay`, {
+            salary_ids: [parseInt(salary, 10)],
+            payment_method: state.paymentMethod || null,
+        });
         showToast('Payment recorded.', 'success');
         await previewSalary();
         await loadRuns();
@@ -1269,7 +1462,9 @@ async function payLine({ run, salary }) {
 async function payRun({ run }) {
     if (!window.confirm('Mark every pending line in this run as paid?')) return;
     try {
-        await api.post(`/api/payroll/runs/${run}/pay`, {});
+        await api.post(`/api/payroll/runs/${run}/pay`, {
+            payment_method: state.paymentMethod || null,
+        });
         showToast('All pending lines paid.', 'success');
         await previewSalary();
         await loadRuns();

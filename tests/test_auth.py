@@ -146,3 +146,26 @@ def test_login_throttle_after_repeated_failures(tmp_path):
     assert throttled.status_code == 429
     assert throttled.get_json()["code"] == "too_many_attempts"
     _failed_logins.clear()
+
+
+def test_sign_in_screen_hides_the_demo_credentials_by_default(client):
+    response = client.get("/")
+    assert response.status_code == 200
+
+    body = response.get_data(as_text=True)
+    assert "owner123" not in body
+    assert "0771112222" not in body
+    assert "Default accounts" not in body
+
+
+def test_sign_in_screen_shows_the_demo_credentials_when_enabled(tmp_path):
+    class Config(TestConfig):
+        DATABASE = str(tmp_path / "demo.sqlite3")
+        SHOW_DEMO_CREDENTIALS = True
+
+    client = create_app(Config).test_client()
+    body = client.get("/").get_data(as_text=True)
+
+    assert "Default accounts" in body
+    assert "owner123" in body
+    assert "0771112222" in body

@@ -1,4 +1,5 @@
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+/* Webfonts are self-hosted in static/css/fonts.css (loaded from index.html
+   before this file) so the portal renders on an offline factory LAN. */
 
 :root {
     --primary: #10b981;
@@ -25,8 +26,8 @@
     --danger: #ef4444;
     --info: #3b82f6;
     
-    --font-heading: 'Outfit', sans-serif;
-    --font-body: 'Plus Jakarta Sans', sans-serif;
+    --font-heading: 'Outfit', ui-sans-serif, system-ui, 'Segoe UI', Roboto, sans-serif;
+    --font-body: 'Plus Jakarta Sans', ui-sans-serif, system-ui, 'Segoe UI', Roboto, sans-serif;
     
     --transition-fast: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     --transition-normal: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -758,6 +759,13 @@ input:checked + .slider:before {
 
 .modal-overlay.active .modal-container {
     transform: scale(1) translateY(0);
+}
+
+/* The run-detail modal carries a nine-column table. Tighten the generous
+   default cell padding so the row action buttons stay on screen. */
+#run-modal .data-table th,
+#run-modal .data-table td {
+    padding: 10px 12px;
 }
 
 .modal-header {

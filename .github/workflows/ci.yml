@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    # The suite runs in ~15s locally; this is just a runaway guard.
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      # Must be `python -m pytest`, not bare `pytest`: there is no root conftest.py
+      # or pytest.ini, so only the module form puts the project root on sys.path
+      # (bare pytest fails with "ModuleNotFoundError: No module named 'db'").
+      - name: Run tests
+        run: python -m pytest -q
+
+      # Explicit paths on purpose: pyflakes has no ignore support and would
+      # otherwise recurse into .venv and report hundreds of vendor errors.
+      - name: Lint
+        run: >
+          python -m pyflakes
+          app.py config.py db.py auth.py helpers.py payroll.py seed.py migrate.py
+          api tests

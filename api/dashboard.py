@@ -8,7 +8,7 @@ from flask import Blueprint, g, jsonify, request
 from api.data import attendance_rows, latest_period_end, period_days, servants, weight_rows
 from api.rates import get_rates
 from auth import login_required, require_role
-from config import AREAS, CYCLE_DAYS, WORK_TYPES
+from config import AREAS, CYCLE_DAYS, PAYMENT_METHODS, WORK_TYPES
 from db import query_all, query_one
 from helpers import parse_iso_date
 from payroll import (
@@ -53,6 +53,7 @@ def system_config():
             "suggested_next_cycle": suggested_next_cycle(latest, today),
             "areas": list(AREAS),
             "work_types": list(WORK_TYPES),
+            "payment_methods": list(PAYMENT_METHODS),
         }
     )
 

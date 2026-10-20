@@ -6,6 +6,8 @@ from pathlib import Path
 
 from flask import current_app, g
 
+import migrate
+
 SCHEMA_FILE = Path(__file__).resolve().parent / "schema.sql"
 
 
@@ -53,7 +55,7 @@ def execute_many(sql: str, seq) -> sqlite3.Cursor:
 
 
 def init_db(app) -> None:
-    """Create the database file (if needed) and apply the schema."""
+    """Create the database file (if needed), apply the schema, then migrate it."""
     db_path = Path(app.config["DATABASE"])
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path)
@@ -63,6 +65,10 @@ def init_db(app) -> None:
         conn.commit()
     finally:
         conn.close()
+
+    # Runs on its own connection, after the one above is closed: journal_mode is
+    # a no-op inside a transaction, and the migration runner manages its own.
+    migrate.apply_migrations(db_path, echo=lambda _message: None)
 
 
 def init_app(app) -> None:

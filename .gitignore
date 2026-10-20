@@ -6,8 +6,19 @@ venv/
 *.egg-info/
 .pytest_cache/
 
-# Runtime data (SQLite DB, generated secret key)
+# Runtime data (SQLite DB, generated secret key, backups)
 instance/
+
+# Environment file: holds the real TEA_FACTORY_SECRET_KEY — never commit it.
+.env
+
+# Screenshots from tests/browser_smoke.py --artifacts
+shots/
+
+# Database backups produced by `flask backup-db` when TEA_FACTORY_DB points
+# outside instance/ (e.g. a local backup folder next to the project).
+backups/
+*.sqlite3
 
 # Editors / OS
 .vscode/

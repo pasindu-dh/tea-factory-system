@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tea Factory Management System</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/fonts.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/index.css') }}">
     <!-- Vendored so the portal works on a factory LAN with no internet access -->
     <script src="{{ url_for('static', filename='js/vendor/feather.min.js') }}"></script>
@@ -39,6 +40,7 @@
                 </button>
             </form>
 
+            {% if show_demo_credentials %}
             <div style="margin-top: 24px; text-align: center; font-size: 0.8rem; color: var(--text-secondary);">
                 <p>Default accounts:</p>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; text-align: left; padding: 10px; background: rgba(255,255,255,0.03); border-radius: 6px;">
@@ -48,6 +50,7 @@
                     <div><strong>Retail:</strong> 0774445555 / servant123</div>
                 </div>
             </div>
+            {% endif %}
         </div>
     </div>
 
@@ -271,6 +274,42 @@
                                     </tr>
                                 </thead>
                                 <tbody id="attendance-table-body"></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="glass-card" style="padding: 24px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px;">
+                            <div>
+                                <h3 class="chart-title">Attendance History</h3>
+                                <p style="color: var(--text-secondary); font-size: 0.85rem;">Past timecards for a date range. Leave the servant on “All servants” for a full roll-call.</p>
+                            </div>
+                            <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+                                <select id="history-servant" class="glass-input" style="width: 200px;" data-change="attendance-history">
+                                    <option value="">All servants</option>
+                                </select>
+                                <input type="date" id="history-start-date" class="glass-input" style="width: 165px;" data-change="attendance-history">
+                                <input type="date" id="history-end-date" class="glass-input" style="width: 165px;" data-change="attendance-history">
+                                <button class="btn btn-secondary btn-sm" data-action="attendance-history-cycle">
+                                    <i data-feather="calendar"></i> Current Cycle
+                                </button>
+                            </div>
+                        </div>
+
+                        <div id="history-summary" style="margin-bottom: 14px;"></div>
+
+                        <div class="data-table-container">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Servant</th>
+                                        <th>Check-In</th>
+                                        <th>Check-Out</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="history-table-body"></tbody>
                             </table>
                         </div>
                     </div>
@@ -723,6 +762,22 @@
                     <i data-feather="download"></i> Download CSV
                 </button>
                 <button class="btn btn-secondary" data-action="close-modal" data-target="payslip-modal">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- PAYROLL RUN DETAIL MODAL -->
+    <div id="run-modal" class="modal-overlay">
+        <div class="modal-container glass-card" style="max-width: 1180px;">
+            <div class="modal-header">
+                <h3 style="font-size: 1.25rem;">Payroll Run</h3>
+                <button class="modal-close" data-action="close-modal" data-target="run-modal">
+                    <i data-feather="x"></i>
+                </button>
+            </div>
+            <div id="run-modal-body"></div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" data-action="close-modal" data-target="run-modal">Close</button>
             </div>
         </div>
     </div>

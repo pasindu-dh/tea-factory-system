@@ -14,9 +14,9 @@ from flask import Blueprint, Response, g, jsonify, request
 from api.data import attendance_rows, period_days, servants, weight_rows
 from api.rates import get_rates
 from auth import login_required, require_role
-from config import CYCLE_DAYS
+from config import CYCLE_DAYS, PAYMENT_METHODS
 from db import execute, query_all, query_one
-from helpers import ApiError, parse_iso_date
+from helpers import ApiError, parse_choice, parse_iso_date
 from payroll import compute_period
 
 bp = Blueprint("payroll_api", __name__, url_prefix="/api/payroll")
@@ -48,6 +48,8 @@ def _serialize_line(row) -> dict:
         "total_salary": row["total_salary"],
         "status": row["status"],
         "paid_at": row["paid_at"],
+        "payment_method": row["payment_method"],
+        "payment_ref": row["payment_ref"],
     }
 
 
@@ -141,6 +143,8 @@ def _payslip_payload(row) -> dict:
         "total_salary": row["total_salary"],
         "status": row["status"],
         "paid_at": row["paid_at"],
+        "payment_method": row["payment_method"],
+        "payment_ref": row["payment_ref"],
         "run_status": row["run_status"],
         "compiled_at": row["compiled_at"],
         "finalized_at": row["finalized_at"],
@@ -311,10 +315,26 @@ def finalize_run(run_id: int):
 @bp.post("/runs/<int:run_id>/pay")
 @require_role("owner")
 def pay_run(run_id: int):
-    """Mark lines paid. Omit salary_ids to pay every pending line."""
+    """Mark lines paid. Omit salary_ids to pay every pending line.
+
+    `payment_method` and `payment_ref` are optional; omitting them leaves any
+    already-recorded values untouched rather than clearing them.
+    """
     run = _get_run_or_404(run_id)
     data = request.get_json(silent=True) or {}
     requested = data.get("salary_ids")
+
+    payment_method = data.get("payment_method")
+    if payment_method is not None:
+        parse_choice(payment_method, PAYMENT_METHODS, "payment_method")
+
+    payment_ref = data.get("payment_ref")
+    if payment_ref is not None:
+        payment_ref = str(payment_ref).strip() or None
+        if payment_ref and len(payment_ref) > 60:
+            raise ApiError(
+                "payment_ref must be at most 60 characters.", 400, "field_too_long"
+            )
 
     lines = _run_lines(run_id)
     if requested is None:
@@ -336,9 +356,11 @@ def pay_run(run_id: int):
     for salary_id in targets:
         execute(
             """UPDATE salaries
-                  SET status = 'Paid', paid_at = datetime('now'), paid_by = ?
+                  SET status = 'Paid', paid_at = datetime('now'), paid_by = ?,
+                      payment_method = COALESCE(?, payment_method),
+                      payment_ref = COALESCE(?, payment_ref)
                 WHERE salary_id = ?""",
-            (g.current_user["user_id"], salary_id),
+            (g.current_user["user_id"], payment_method, payment_ref, salary_id),
         )
 
     if run["status"] == "draft":
@@ -389,6 +411,8 @@ def export_payslip(salary_id: int):
         ["Gross salary (Rs.)", slip["total_salary"]],
         ["Status", slip["status"]],
         ["Paid at", slip["paid_at"] or "-"],
+        ["Payment method", slip["payment_method"] or "-"],
+        ["Payment ref", slip["payment_ref"] or "-"],
     ]
     return _csv_response(filename, ["Field", "Value"], rows)
 
@@ -415,6 +439,8 @@ def export_run(run_id: int):
             line["total_salary"],
             line["status"],
             line["paid_at"] or "-",
+            line["payment_method"] or "-",
+            line["payment_ref"] or "-",
         ]
         for line in lines
     ]
@@ -430,6 +456,8 @@ def export_run(run_id: int):
         "Total salary (Rs.)",
         "Status",
         "Paid at",
+        "Payment method",
+        "Payment ref",
     ]
     return _csv_response(filename, header, rows)
 

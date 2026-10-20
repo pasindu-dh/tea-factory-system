@@ -212,3 +212,93 @@ def test_owner_only_endpoints(servant_client, supervisor_client):
 def test_invalid_dates_rejected(owner_client):
     assert owner_client.get("/api/payroll/preview?start=nope&end=nope").status_code == 400
     assert owner_client.get(f"/api/payroll/preview?start={END}&end={START}").status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Payment method / reference (migration 001)
+# ---------------------------------------------------------------------------
+def test_pay_records_the_payment_method_and_reference(owner_client, make_run):
+    run = make_run()
+    run_id = run["run"]["run_id"]
+    target = next(l for l in run["lines"] if l["servant_id"] == 301)["salary_id"]
+
+    response = owner_client.post(
+        f"/api/payroll/runs/{run_id}/pay",
+        json={"salary_ids": [target], "payment_method": "Bank Transfer", "payment_ref": "REF-9"},
+    )
+    assert response.status_code == 200
+
+    by_id = {line["salary_id"]: line for line in response.get_json()["lines"]}
+    assert by_id[target]["status"] == "Paid"
+    assert by_id[target]["payment_method"] == "Bank Transfer"
+    assert by_id[target]["payment_ref"] == "REF-9"
+
+    # Untouched lines keep no payment details rather than inheriting them.
+    other = next(l for l in response.get_json()["lines"] if l["servant_id"] != 301)
+    assert other["status"] == "Pending"
+    assert other["payment_method"] is None
+    assert other["payment_ref"] is None
+
+
+def test_paying_without_a_method_leaves_the_recorded_one_alone(owner_client, make_run):
+    run = make_run()
+    run_id = run["run"]["run_id"]
+    target = next(l for l in run["lines"] if l["servant_id"] == 301)["salary_id"]
+
+    owner_client.post(
+        f"/api/payroll/runs/{run_id}/pay",
+        json={"salary_ids": [target], "payment_method": "Cash"},
+    )
+    # A second call that omits the method must not wipe it (COALESCE, not =).
+    response = owner_client.post(f"/api/payroll/runs/{run_id}/pay", json={"salary_ids": [target]})
+    assert response.status_code == 200
+
+    by_id = {line["salary_id"]: line for line in response.get_json()["lines"]}
+    assert by_id[target]["payment_method"] == "Cash"
+
+
+def test_pay_rejects_an_unknown_payment_method(owner_client, make_run):
+    run = make_run()
+    response = owner_client.post(
+        f"/api/payroll/runs/{run['run']['run_id']}/pay", json={"payment_method": "Crypto"}
+    )
+    assert response.status_code == 400
+    assert response.get_json()["code"] == "invalid_choice"
+
+
+def test_pay_rejects_an_overlong_reference(owner_client, make_run):
+    run = make_run()
+    response = owner_client.post(
+        f"/api/payroll/runs/{run['run']['run_id']}/pay", json={"payment_ref": "X" * 61}
+    )
+    assert response.status_code == 400
+    assert response.get_json()["code"] == "field_too_long"
+
+
+def test_payslip_and_run_csv_expose_the_payment_details(owner_client, make_run):
+    run = make_run()
+    run_id = run["run"]["run_id"]
+    target = next(l for l in run["lines"] if l["servant_id"] == 301)["salary_id"]
+
+    owner_client.post(
+        f"/api/payroll/runs/{run_id}/pay",
+        json={"salary_ids": [target], "payment_method": "Cheque", "payment_ref": "CHQ-123"},
+    )
+
+    payslip = owner_client.get(f"/api/payroll/payslips/{target}").get_json()["payslip"]
+    assert payslip["payment_method"] == "Cheque"
+    assert payslip["payment_ref"] == "CHQ-123"
+
+    slip_csv = owner_client.get(f"/api/payroll/payslips/{target}/export?format=csv").get_data(as_text=True)
+    assert "Cheque" in slip_csv and "CHQ-123" in slip_csv
+
+    run_csv = owner_client.get(f"/api/payroll/runs/{run_id}/export?format=csv").get_data(as_text=True)
+    assert "Payment method" in run_csv
+    assert "Cheque" in run_csv and "CHQ-123" in run_csv
+
+
+def test_config_exposes_the_payment_methods(owner_client):
+    from config import PAYMENT_METHODS
+
+    payload = owner_client.get("/api/config").get_json()
+    assert payload["payment_methods"] == list(PAYMENT_METHODS)

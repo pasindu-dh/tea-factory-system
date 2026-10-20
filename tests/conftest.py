@@ -21,8 +21,17 @@ from werkzeug.security import generate_password_hash
 import db as db_module
 from app import create_app
 from config import TestConfig
-from db import execute
 from payroll import rainy_adjust
+
+# Werkzeug's default is scrypt, ~85 ms per hash. Every test builds a database with
+# seven users, so hashing alone would cost ~0.6 s per test -- for a suite that is
+# not testing password strength. check_password_hash reads the method from the
+# stored hash, so login still exercises the real verification path.
+TEST_HASH_METHOD = "pbkdf2:sha256:1000"
+
+
+def _hash_password(password: str) -> str:
+    return generate_password_hash(password, method=TEST_HASH_METHOD)
 
 PERIOD_START = date(2026, 9, 24)
 PERIOD_END = date(2026, 10, 3)
@@ -58,30 +67,35 @@ EXPECTED_SALARIES = {
 
 
 def seed_fixture_data() -> None:
-    """Insert the deterministic dataset (must run inside an app context)."""
+    """Insert the deterministic dataset (must run inside an app context).
+
+    Everything goes through one connection and a single commit: db.execute()
+    commits per statement, and ~130 individually-committed inserts (each an
+    fsync) cost well over a second per test on Windows.
+    """
+    conn = db_module.get_db()
+
     for user_id, name, role, gender, phone, password, work_type, area in USER_ROWS:
-        execute(
+        conn.execute(
             """INSERT INTO users
                    (user_id, name, role, gender, phone, password_hash, work_type, area)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (user_id, name, role, gender, phone, generate_password_hash(password), work_type, area),
+            (user_id, name, role, gender, phone, _hash_password(password), work_type, area),
         )
 
-    execute(
+    conn.execute(
         """INSERT INTO rate_config
                (id, above_80, between_70_80, below_70, male_daily, female_daily)
            VALUES (1, 60, 50, 40, 2000, 1500)"""
     )
 
+    attendance_rows, weight_rows = [], []
     for offset in range(PERIOD_DAYS):
         day = (PERIOD_START + timedelta(days=offset)).isoformat()
 
         for servant_id, present_days in PRESENT_DAYS.items():
             present = offset < present_days
-            execute(
-                """INSERT INTO attendance
-                       (servant_id, work_date, check_in, check_out, status, recorded_by)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
+            attendance_rows.append(
                 (
                     servant_id,
                     day,
@@ -89,40 +103,68 @@ def seed_fixture_data() -> None:
                     "17:00" if present else None,
                     "Present" if present else "Absent",
                     201,
-                ),
+                )
             )
 
         if offset < PRESENT_DAYS[301]:
-            execute(
-                """INSERT INTO weights
-                       (servant_id, work_date, original_weight, adjusted_weight, rainy_day, area, recorded_by)
-                   VALUES (?, ?, ?, ?, 0, 'Tea Field A', 201)""",
-                (301, day, 100.0, 100.0),
-            )
+            weight_rows.append((301, day, 100.0, 100.0, 0, "Tea Field A", 201))
 
         if offset < PRESENT_DAYS[302]:
-            execute(
-                """INSERT INTO weights
-                       (servant_id, work_date, original_weight, adjusted_weight, rainy_day, area, recorded_by)
-                   VALUES (?, ?, ?, ?, 0, 'Tea Field B', 201)""",
-                (302, day, 50.0, 50.0),
-            )
+            weight_rows.append((302, day, 50.0, 50.0, 0, "Tea Field B", 201))
 
         if offset < PRESENT_DAYS[305]:
             is_rainy = offset == 0
             adjusted = rainy_adjust(100.0) if is_rainy else 100.0
-            execute(
-                """INSERT INTO weights
-                       (servant_id, work_date, original_weight, adjusted_weight, rainy_day, area, recorded_by)
-                   VALUES (?, ?, ?, ?, ?, 'Tea Field A', 201)""",
-                (305, day, 100.0, adjusted, 1 if is_rainy else 0),
+            weight_rows.append(
+                (305, day, 100.0, adjusted, 1 if is_rainy else 0, "Tea Field A", 201)
             )
 
-    execute(
+    conn.executemany(
+        """INSERT INTO attendance
+               (servant_id, work_date, check_in, check_out, status, recorded_by)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        attendance_rows,
+    )
+    conn.executemany(
+        """INSERT INTO weights
+               (servant_id, work_date, original_weight, adjusted_weight, rainy_day, area, recorded_by)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        weight_rows,
+    )
+    conn.execute(
         """INSERT INTO work_area_assignments (servant_id, work_date, area, assigned_by)
            VALUES (301, ?, 'Tea Field A', 201)""",
         (PERIOD_START.isoformat(),),
     )
+    conn.commit()
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _fast_password_hashing():
+    """Swap scrypt for a cheap KDF across the app modules, for this session only.
+
+    api/users.py, auth.py and seed.py each `from werkzeug.security import
+    generate_password_hash`, so the module attribute has to be rebound. Only the
+    *creation* side changes; check_password_hash still reads the method from the
+    stored hash, so logins verify through the real code path.
+    """
+    import api.users as users_module
+    import auth as auth_module
+    import seed as seed_module
+
+    modules = (users_module, auth_module, seed_module)
+    original = {module: module.generate_password_hash for module in modules}
+
+    def fast(password, method=TEST_HASH_METHOD, **kwargs):
+        return generate_password_hash(password, method=method, **kwargs)
+
+    for module in modules:
+        module.generate_password_hash = fast
+    try:
+        yield
+    finally:
+        for module, function in original.items():
+            module.generate_password_hash = function
 
 
 @pytest.fixture()

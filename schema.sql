@@ -1,5 +1,19 @@
 -- Tea Factory System schema (SQLite)
 -- Dates are ISO 'YYYY-MM-DD' TEXT, times 'HH:MM', money integer rupees.
+--
+-- ===========================================================================
+-- THIS FILE IS THE FROZEN VERSION 0 BASELINE. Treat it as read-only.
+--
+-- It creates a brand-new database and nothing more. Every subsequent schema
+-- change MUST be a new file in migrations/ (e.g. 002_add_something.sql) and
+-- MUST NOT also be added here: databases created before the change only ever
+-- receive it through a migration, so editing this file would silently split
+-- fresh installs from existing ones. See migrate.py for the runner.
+--
+-- Note that the domain constants in config.py (AREAS, CYCLE_DAYS) are repeated
+-- in the CHECK constraints below. Changing either therefore needs a migration
+-- that rebuilds the table, not just a config edit.
+-- ===========================================================================
 
 PRAGMA foreign_keys = ON;
 
