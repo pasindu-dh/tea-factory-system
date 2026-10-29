@@ -1,0 +1,3 @@
+# The Docker entrypoint is executed inside Linux; CRLF would make it fail.
+*.sh text eol=lf
+Dockerfile text eol=lf

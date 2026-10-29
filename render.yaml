@@ -1,0 +1,33 @@
+# Render Blueprint: Docker web service with a persistent disk for SQLite.
+#
+# A disk requires a paid instance type; Render's free web services have an
+# ephemeral filesystem and would lose every write on restart. Keep exactly one
+# instance: SQLite allows one writer, and a disk can be mounted by one service.
+services:
+  - type: web
+    name: tea-factory
+    runtime: docker
+    plan: starter
+    region: singapore
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: TEA_FACTORY_DB
+        value: /data/tea_factory.sqlite3
+      - key: TEA_FACTORY_SECRET_KEY
+        generateValue: true
+      - key: TEA_FACTORY_SECURE_COOKIES
+        value: "1"
+      - key: TEA_FACTORY_PRODUCTION
+        value: "1"
+      - key: TEA_FACTORY_TRUST_PROXY
+        value: "1"
+      - key: TEA_FACTORY_SHOW_DEMO_CREDENTIALS
+        value: "0"
+      - key: TZ
+        value: Asia/Colombo
+    disk:
+      name: tea-data
+      mountPath: /data
+      sizeGB: 1

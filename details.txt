@@ -1,0 +1,409 @@
+Ceylon Tea Factory — Management System
+
+Complete System Report
+
+---
+
+1. Overview
+
+A web-based management portal for a tea factory / estate, covering the operational chain from worker check-in through tea-leaf collection and weighing, to tiered payroll, payslips, and owner-facing analytics.
+
+It is a self-hosted web application — one server on the factory LAN, reachable from any browser on the network. It needs no internet connection to operate.
+
+┌─────────────────┬───────────────────────────────────────────────────────────────────┐
+│    Attribute    │                              Detail                               │
+├─────────────────┼───────────────────────────────────────────────────────────────────┤
+│ Backend         │ Python 3.12+ / Flask 3.1                                          │
+├─────────────────┼───────────────────────────────────────────────────────────────────┤
+│ Database        │ SQLite (WAL mode, foreign keys enforced, raw SQL — no ORM)        │
+├─────────────────┼───────────────────────────────────────────────────────────────────┤
+│ Frontend        │ Vanilla JavaScript single-page app — no framework, no build step  │
+├─────────────────┼───────────────────────────────────────────────────────────────────┤
+│ Serving         │ waitress (recommended) or the Flask dev server                    │
+├─────────────────┼───────────────────────────────────────────────────────────────────┤
+│ Authentication  │ Session cookies, Werkzeug password hashing, server-enforced roles │
+├─────────────────┼───────────────────────────────────────────────────────────────────┤
+│ API surface     │ 42 routes — 22 GET, 12 POST, 4 PUT, 4 DELETE                      │
+├─────────────────┼───────────────────────────────────────────────────────────────────┤
+│ Data model      │ 7 tables                                                          │
+├─────────────────┼───────────────────────────────────────────────────────────────────┤
+│ User interface  │ 9 role-gated views, 5 modals, 4 charts + SVG gauges               │
+├─────────────────┼───────────────────────────────────────────────────────────────────┤
+│ Automated tests │ 153 tests, all passing (~15 s) + browser smoke test (25 checks)   │
+└─────────────────┴───────────────────────────────────────────────────────────────────┘
+
+Design target: a factory LAN with no internet. Chart.js, the icon set, and both webfonts are vendored locally, and the Content-Security-Policy allows no external origins whatsoever.
+
+---
+
+2. User Roles
+
+Three roles, enforced server-side on every request. The UI only hides menu items — it is not the security boundary.
+
+┌────────────┬─────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│    Role    │                                                Scope                                                │
+├────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ Owner      │ Full administrator. Manages staff, configures rates, compiles and pays payroll, sees all analytics. │
+├────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ Supervisor │ Field operations. Registers servants, marks attendance, records weights, assigns work areas.        │
+├────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ Servant    │ Self-service only — exclusively their own data.                                                     │
+└────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+A servant requesting another servant's records gets 403. A supervisor cannot touch payroll or rates. The last active owner cannot be deleted or demoted, and no user can delete themselves.
+
+---
+
+3. Features
+
+3.1 Owner (main administrator)
+
+Staff management
+- Create, edit, deactivate, reactivate and delete Supervisors and Servants
+- Force password resets — issues a one-time temporary password and flags the account as must change password
+- Deletion is blocked if the person has payroll history, preserving financial records
+
+Payroll configuration
+- Per-kg rates for three attendance brackets, plus separate male/female daily wages for retail staff
+- Changing rates never alters an already-compiled run — each run snapshots the rates in force when compiled
+
+Payroll operations
+- Preview any date range without committing anything
+- Compile a 10-day salary run (the engine refuses any range that is not exactly 10 days)
+- Finalize (locks) or delete a draft run
+- Pay individual lines, or all pending lines at once
+- Record how each payment was made — Cash, Bank Transfer or Cheque, with an optional reference such as a cheque number — so cash and bank payouts can be reconciled
+- Open any run, current or historical, to see every servant's line at once: bracket, rate, output, status — and pay a single line in place without leaving the view
+
+Payslips and exports
+- Printable payslip per servant, with print styling that isolates the slip on the page
+- CSV export of a single payslip
+- CSV export of an entire run, including a payment-method column for reconciliation
+
+Analytics
+- Harvest vs real payroll cost over time (not a flat-rate estimate)
+- Rainy-day moisture deduction breakdown
+- Work-area distribution
+- Productivity leaderboard with efficiency labels and per-servant deductions
+
+3.2 Field Supervisor
+
+- Register new servant profiles
+- Mark daily attendance timecards — status becomes Present automatically on check-in, with quick "Present" (07:30–17:00) and "Absent" buttons
+- Review attendance history over any date range, for one servant or the whole crew, with the attendance percentage computed server-side
+- Record tea bag weights with a live rainy-day deduction preview before saving; the work area is pre-filled from that day's assignment
+- Assign every servant a daily work area
+
+3.3 Servant (worker view)
+
+- Live attendance ring and estimated-salary gauge for the current payroll cycle, with the active rate bracket highlighted
+- Personal ledger: every weighing, every check-in/out timestamp, and full salary history
+- Printable payslips showing when and how each payment was made
+
+---
+
+4. Main Functions — Core Business Logic
+
+All pay mathematics lives in payroll.py, a pure module with no Flask or database imports. It is independently testable and is the single source of truth for every figure the system produces.
+
+┌──────────────────────────────┬───────────────────────────────────────────────────────────────┐
+│             Rule             │                            Formula                            │
+├──────────────────────────────┼───────────────────────────────────────────────────────────────┤
+│ Rainy-day moisture deduction │ adjusted = original − original / 20 (1 kg per 20 kg)          │
+├──────────────────────────────┼───────────────────────────────────────────────────────────────┤
+│ Tea Collector pay            │ adjusted kg × rate, rate by attendance bracket                │
+├──────────────────────────────┼───────────────────────────────────────────────────────────────┤
+│ — bracket above 80%          │ Rs. 60 / kg (configurable)                                    │
+├──────────────────────────────┼───────────────────────────────────────────────────────────────┤
+│ — bracket 70–80%             │ Rs. 50 / kg (configurable)                                    │
+├──────────────────────────────┼───────────────────────────────────────────────────────────────┤
+│ — bracket below 70%          │ Rs. 40 / kg (configurable)                                    │
+├──────────────────────────────┼───────────────────────────────────────────────────────────────┤
+│ Retail Worker pay            │ days present × daily wage (Male Rs. 2,000 / Female Rs. 1,500) │
+├──────────────────────────────┼───────────────────────────────────────────────────────────────┤
+│ Payroll cycle                │ exactly 10 days; rates snapshotted at compile time            │
+└──────────────────────────────┴───────────────────────────────────────────────────────────────┘
+
+Two correctness details handled deliberately:
+
+- Rounding is half-up, not banker's rounding. Python's round() and JavaScript's Math.round can round .5 to even; all money passes through Decimal with ROUND_HALF_UP so payouts match the factory's original spreadsheet.
+- Adjusted weight is computed server-side. The API ignores any client-supplied adjusted weight — a browser cannot inflate a payout.
+
+Attendance percentage is computed in exactly one place (payroll.attendance_pct) and exposed by five endpoints. No screen re-derives it with different rounding.
+
+---
+
+5. What This System Already Has
+
+5.1 Backend — 42 routes across 9 modules
+
+┌────────────────────┬────────┬──────────────────────────────────────────────────────────┐
+│       Module       │ Routes │                      Responsibility                      │
+├────────────────────┼────────┼──────────────────────────────────────────────────────────┤
+│ app.py             │ 1      │ SPA shell, security headers, CLI                         │
+├────────────────────┼────────┼──────────────────────────────────────────────────────────┤
+│ auth.py            │ 4      │ Login, logout, current user, change password             │
+├────────────────────┼────────┼──────────────────────────────────────────────────────────┤
+│ api/users.py       │ 6      │ Staff CRUD, password resets, role rules                  │
+├────────────────────┼────────┼──────────────────────────────────────────────────────────┤
+│ api/attendance.py  │ 5      │ Daily sheet, upsert, bulk, history, summary              │
+├────────────────────┼────────┼──────────────────────────────────────────────────────────┤
+│ api/weights.py     │ 4      │ List, rainy preview, record, delete                      │
+├────────────────────┼────────┼──────────────────────────────────────────────────────────┤
+│ api/assignments.py │ 4      │ Daily work-area assignment                               │
+├────────────────────┼────────┼──────────────────────────────────────────────────────────┤
+│ api/rates.py       │ 2      │ Read (all roles), update (owner only)                    │
+├────────────────────┼────────┼──────────────────────────────────────────────────────────┤
+│ api/payroll_api.py │ 11     │ Preview, runs, finalize, pay, payslips, exports, history │
+├────────────────────┼────────┼──────────────────────────────────────────────────────────┤
+│ api/dashboard.py   │ 3      │ System config, role-aware dashboard, servant ledger      │
+├────────────────────┼────────┼──────────────────────────────────────────────────────────┤
+│ api/reports.py     │ 2      │ Analytics overview, productivity leaderboard             │
+└────────────────────┴────────┴──────────────────────────────────────────────────────────┘
+
+5.2 Data model — 7 tables
+
+users · attendance · weights · work_area_assignments · rate_config · payroll_runs · salaries
+
+Dates are ISO YYYY-MM-DD text; money is integer rupees. Uniqueness is enforced where it matters — one attendance record per servant per day, one assignment per servant per day, one salary line per servant per run. Foreign keys cascade for operational data and restrict where financial history must survive.
+
+5.3 Security
+
+- Passwords hashed (Werkzeug); minimum length enforced
+- Signed, HttpOnly, SameSite=Lax session cookies, 12-hour lifetime
+- Session cleared on login to prevent session fixation
+- Login throttle — 10 failed attempts per IP per 5 minutes returns 429
+- Strict Content-Security-Policy, no external origins, no inline script, no eval
+- X-Content-Type-Options: nosniff, Referrer-Policy: same-origin, frame-ancestors 'none'
+- All rendered user input HTML-escaped
+- Demo passwords hidden from the sign-in screen by default
+- Secret key generated on first run, or supplied via environment variable
+
+5.4 Reliability and operations
+
+- Schema migrations — numbered SQL files applied via PRAGMA user_version; transactional, idempotent, refuses to run against a newer schema
+- flask backup-db — uses SQLite's online backup API (a plain file copy can silently lose data under WAL), verifies integrity, reports row counts at creation
+- flask migrate --status — shows applied and pending migrations
+- Application never auto-migrates at startup (avoids worker races)
+
+5.5 Testing and CI
+
+- 153 pytest tests, all passing, ~15 seconds
+- Covers the payroll engine, authentication, the full role matrix, every API endpoint, payslip and CSV export, report aggregates, and migrations
+- Browser smoke test (tests/browser_smoke.py) drives real Chromium through the interactive flows, asserts on rendered DOM, and fails on any CSP violation or uncaught JS error — 25 checks
+- GitHub Actions CI on Python 3.12 and 3.13, running tests plus lint
+
+5.6 Documentation
+
+- README.md — features, business rules, setup, deployment, upgrades, backups, HTTPS, troubleshooting
+- .env.example — every supported environment variable, documented
+- Deterministic demo data via flask init-db --seed
+
+---
+
+6. What We Want to Implement
+
+6.1 Business modules with no representation at all
+
+The system models the worker and payroll side of the factory. Everything downstream of harvested leaf is missing — "Factory Processing" and "Packaging Section" exist only as work-area labels with no data behind them.
+
+┌──────────────────────────────┬──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│            Module            │                                                  What's missing                                                  │
+├──────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ Suppliers / farmers registry │ No external leaf suppliers; leaves come only from internal work areas. No purchase records or supplier payments. │
+├──────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ Inventory / stock            │ No tracking of materials, packaging, fuel, or finished goods.                                                    │
+├──────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ Production / manufacturing   │ No batches, processing steps, yields, or conversion ratios (green leaf → made tea).                              │
+├──────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ Quality grading              │ No grade fields, plucking standards, or quality scoring. The leaderboard measures productivity, not quality.     │
+├──────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ Transport / delivery         │ No vehicles, routes, shipments, or delivery records.                                                             │
+├──────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ Customer invoicing           │ No customers, orders, invoices or receivables. The system handles payroll outflow but models no revenue.         │
+└──────────────────────────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+6.2 Known limitations of what exists
+
+┌───────────────────────────────────┬─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│            Limitation             │                                                       Impact                                                        │
+├───────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ Payroll cycle hard-coded to 10    │ CYCLE_DAYS is configurable in config.py, but also baked into a CHECK (period_days = 10) constraint — changing it    │
+│ days                              │ needs a table-rebuild migration.                                                                                    │
+├───────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ Work areas are database           │ The four area names appear in CHECK constraints. Adding a fifth needs a migration rebuilding two tables.            │
+│ constraints                       │                                                                                                                     │
+├───────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ Login throttle is per-process     │ Effective because waitress runs one process; multiple workers would split it.                                       │
+├───────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ No audit trail                    │ No record of who changed a rate or edited a user. Payroll amounts and payment details are recorded; administrative  │
+│                                   │ changes are not.                                                                                                    │
+├───────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ No print layout for the           │ Only the payslip has print styling; the run view exports to CSV.                                                    │
+│ run-detail view                   │                                                                                                                     │
+├───────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ No JavaScript unit tests          │ UI covered by the browser smoke test only.                                                                          │
+├───────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ Single-writer database            │ SQLite allows one writer at a time — comfortable for one factory, not for many concurrent sites.                    │
+├───────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ No bulk user import               │ Accounts are created individually.                                                                                  │
+└───────────────────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+---
+
+7. How to Run
+
+7.1 Prerequisites
+
+- Python 3.12 or newer — check with py --version. If missing:
+winget install -e --id Python.Python.3.12
+
+7.2 First-time setup
+
+From the project folder (D:\Project\tea-factory-system):
+
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1          # if blocked: Set-ExecutionPolicy -Scope Process Bypass
+pip install -r requirements.txt -r requirements-dev.txt
+flask --app app init-db --seed        # creates instance/tea_factory.sqlite3 + demo data
+
+Omit --seed for an empty system with no demo data.
+
+7.3 Starting the server
+
+Recommended — waitress, in your own terminal window:
+
+cd D:\Project\tea-factory-system
+.\.venv\Scripts\waitress-serve.exe --host=0.0.0.0 --port=5000 --threads=8 app:app
+
+Leave the window open — that is the server. Stop it with Ctrl+C or by closing the window.
+
+Quick option — the Flask dev server (auto-reloads on code changes, not for real use):
+
+flask --app app run --host=0.0.0.0 --port=5000
+
+Run automatically at login (so it is always available):
+
+schtasks /create /tn "Tea Factory" /sc onlogon /rl highest ^
+  /tr "cmd /c cd /d D:\Project\tea-factory-system && .venv\Scripts\waitress-serve.exe --host=0.0.0.0 --port=5000 app:app"
+
+7.4 Opening the system
+
+- On this computer: http://127.0.0.1:5000
+- From other devices on the same network: http://<this-pc-ip>:5000 — e.g. http://10.10.105.233:5000
+
+If other devices cannot connect, Windows Firewall is blocking the port (run in an Administrator shell):
+
+netsh advfirewall firewall add rule name="Tea Factory" dir=in action=allow protocol=TCP localport=5000
+
+7.5 Default accounts (demo data)
+
+┌───────────────┬────────────┬────────────┐
+│     Role      │   Phone    │  Password  │
+├───────────────┼────────────┼────────────┤
+│ Owner         │ 0771112222 │ owner123   │
+├───────────────┼────────────┼────────────┤
+│ Supervisor    │ 0773334444 │ super123   │
+├───────────────┼────────────┼────────────┤
+│ Supervisor    │ 0775556666 │ super123   │
+├───────────────┼────────────┼────────────┤
+│ Tea Collector │ 0777778888 │ servant123 │
+├───────────────┼────────────┼────────────┤
+│ Tea Collector │ 0779990000 │ servant123 │
+├───────────────┼────────────┼────────────┤
+│ Retail Worker │ 0772223333 │ servant123 │
+├───────────────┼────────────┼────────────┤
+│ Retail Worker │ 0774445555 │ servant123 │
+└───────────────┴────────────┴────────────┘
+
+These are not shown on the sign-in screen. To display them there (useful for a demo):
+
+$env:TEA_FACTORY_SHOW_DEMO_CREDENTIALS = "1"
+flask --app app run --host=0.0.0.0 --port=5000
+
+7.6 Upgrading an existing installation
+
+Always in this order — every step is safe against a live database:
+
+flask --app app backup-db        # 1. back up first
+flask --app app migrate --status # 2. see where the schema stands
+flask --app app migrate          # 3. bring it up to date
+# then start the server
+
+The application never migrates itself. Backups can be scheduled nightly:
+
+schtasks /create /tn "Tea Factory Backup" /sc daily /st 22:00 ^
+  /tr "cmd /c cd /d D:\Project\tea-factory-system && .venv\Scripts\flask --app app backup-db"
+
+7.7 Running the tests
+
+py -m pytest -q          # 153 tests, ~15 seconds
+
+Use py -m pytest, not a bare pytest — there is no root conftest.py, so only the module form puts the project root on sys.path.
+
+Optional browser smoke test (needs a one-off browser download):
+
+py -m playwright install chromium
+py -m tests.browser_smoke
+
+7.8 Common problems
+
+┌─────────────────────────────────────────────────────────┬───────────────────────────────────────────────────────────────────────────────────────────────┐
+│                         Symptom                         │                                              Fix                                              │
+├─────────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────┤
+│ ModuleNotFoundError: No module named 'flask'            │ Virtualenv not active. Use .\.venv\Scripts\python.exe -m flask ... — there is no py inside    │
+│                                                         │ .venv\Scripts.                                                                                │
+├─────────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────┤
+│ Port 5000 already in use                                │ netstat -ano | findstr :5000 then taskkill /PID <pid> /F, or serve on another port.           │
+├─────────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────┤
+│ Other devices can't connect                             │ Add the firewall rule above; confirm same subnet.                                             │
+├─────────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────┤
+│ No database at ... on flask migrate                     │ Run flask --app app init-db --seed first.                                                     │
+├─────────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────┤
+│ "Database is at schema version N, but this code knows   │ The database was migrated by newer code. Update the app, or restore an older backup.          │
+│ up to M"                                                │                                                                                               │
+├─────────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────┤
+│ Page looks unstyled after an upgrade                    │ Stale cached stylesheet — hard-reload with Ctrl+F5.                                           │
+└─────────────────────────────────────────────────────────┴───────────────────────────────────────────────────────────────────────────────────────────────┘
+
+7.9 Important operational note
+
+Keep the server in its own terminal window. A server started as a background child of another tool can be terminated when the machine runs short of memory. A terminal you control is immune to that.
+
+---
+
+8. Summary
+
+┌─────────────────────────────────────────────────────────────────┬────────────────┐
+│                              Area                               │     Status     │
+├─────────────────────────────────────────────────────────────────┼────────────────┤
+│ Attendance & timecards                                          │ ✅ Complete    │
+├─────────────────────────────────────────────────────────────────┼────────────────┤
+│ Tea-leaf weighing + rainy deduction                             │ ✅ Complete    │
+├─────────────────────────────────────────────────────────────────┼────────────────┤
+│ Work-area assignment                                            │ ✅ Complete    │
+├─────────────────────────────────────────────────────────────────┼────────────────┤
+│ 10-day tiered payroll                                           │ ✅ Complete    │
+├─────────────────────────────────────────────────────────────────┼────────────────┤
+│ Payslips, payment recording, CSV export                         │ ✅ Complete    │
+├─────────────────────────────────────────────────────────────────┼────────────────┤
+│ Role-based access control                                       │ ✅ Complete    │
+├─────────────────────────────────────────────────────────────────┼────────────────┤
+│ Analytics & reporting                                           │ ✅ Complete    │
+├─────────────────────────────────────────────────────────────────┼────────────────┤
+│ Rate configuration                                              │ ✅ Complete    │
+├─────────────────────────────────────────────────────────────────┼────────────────┤
+│ Migrations, backups, CI, documentation                          │ ✅ Complete    │
+├─────────────────────────────────────────────────────────────────┼────────────────┤
+│ Suppliers, inventory, production, quality, transport, invoicing │ ❌ Not started │
+├─────────────────────────────────────────────────────────────────┼────────────────┤
+│ Audit trail                                                     │ ❌ Not started │
+└─────────────────────────────────────────────────────────────────┴────────────────┘
+
+In short: the worker-and-payroll half of a tea factory system is complete, hardened, documented and tested — 153 automated tests plus a browser smoke test, running in production form on the factory LAN. The manufacturing and commercial half — where the leaf goes after it is weighed, and where the money comes from — has not been built.
+
+---
+
+I've now written this report twice, so you're probably assembling a document. Want me to save it as REPORT.md in the project so you can edit and share it? I can also rework it for a specific audience — an academic submission, a presentation, or a one-page summary.
+
+✻ Baked for 26s · done Friday 4:20 PM
