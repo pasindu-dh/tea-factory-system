@@ -58,15 +58,19 @@
     <div id="app-shell" class="app-shell" style="display: none;">
 
         <!-- Sidebar Navigation -->
-        <aside id="sidebar-nav" class="sidebar">
+        <aside id="sidebar-nav" class="sidebar" aria-label="Main navigation">
             <div class="sidebar-header">
                 <div class="sidebar-logo">
                     <i data-feather="activity"></i>
                 </div>
-                <div>
+                <div class="sidebar-brand">
                     <h1 class="sidebar-title">TeaFactory</h1>
-                    <span style="font-size: 0.7rem; color: var(--primary-light); font-weight: 600; text-transform: uppercase;">Management v2.0</span>
+                    <span class="sidebar-subtitle">Management v2.0</span>
                 </div>
+                <button id="sidebar-close-btn" type="button" class="sidebar-close-btn"
+                        data-action="close-sidebar" aria-label="Close navigation menu" title="Close navigation menu">
+                    <i data-feather="x"></i>
+                </button>
             </div>
 
             <ul class="sidebar-menu">

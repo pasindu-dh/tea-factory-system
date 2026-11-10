@@ -100,6 +100,168 @@ def expected_run_figures(db: Path) -> tuple[int, int, int]:
     return line_count, total, salary_id
 
 
+def check_management_tables(page, artifacts: Path, report: Report) -> None:
+    """Sidebar profile and servant/supervisor row actions at three widths."""
+    print("\n== owner: management tables and sidebar profile ==")
+
+    page.click("#menu-supervisors")
+    page.wait_for_selector("#supervisors-table-body tr .table-actions")
+    actions = page.locator("#supervisors-table-body tr").first.locator(".table-actions .btn")
+    labels = [actions.nth(i).inner_text().strip().lower() for i in range(actions.count())]
+    report.check(
+        "supervisor row shows four actions",
+        labels == ["edit", "reset", "deactivate", "delete"],
+        str(labels),
+    )
+    boxes = [actions.nth(i).bounding_box() for i in range(actions.count())]
+    if all(boxes):
+        tops = [box["y"] for box in boxes]
+        lefts = [box["x"] for box in boxes]
+        heights = [box["height"] for box in boxes]
+        report.check("supervisor actions share one row", max(tops) - min(tops) <= 1.5, str(tops))
+        report.check("supervisor actions are ordered left to right", lefts == sorted(lefts), str(lefts))
+        report.check("supervisor actions have equal heights", max(heights) - min(heights) <= 1.5, str(heights))
+    else:
+        report.check("supervisor actions have measurable boxes", False, str(boxes))
+    report.check(
+        "supervisor action group does not wrap",
+        page.evaluate(
+            "getComputedStyle(document.querySelector('#supervisors-table-body .table-actions')).flexWrap"
+        ) == "nowrap",
+    )
+    report.check(
+        "delete keeps the red danger style",
+        "btn-danger" in (actions.nth(3).get_attribute("class") or ""),
+    )
+    page.screenshot(path=str(artifacts / "11-supervisors-actions.png"))
+
+    avatar = page.locator("#user-avatar")
+    avatar_box = avatar.bounding_box()
+    avatar_text = avatar.inner_text().strip()
+    report.check(
+        "profile avatar is a 40x40 circle",
+        bool(avatar_box)
+        and abs(avatar_box["width"] - 40) <= 0.5
+        and abs(avatar_box["height"] - 40) <= 0.5
+        and page.evaluate(
+            "getComputedStyle(document.querySelector('#user-avatar')).borderRadius"
+        ) == "50%",
+        str(avatar_box),
+    )
+    avatar_layout = page.evaluate(
+        "(() => { const s = getComputedStyle(document.querySelector('#user-avatar'));"
+        " return `${s.alignItems}|${s.justifyContent}`; })()"
+    )
+    report.check(
+        "profile avatar shows centered initials",
+        len(avatar_text) <= 2 and avatar_text.isupper() and avatar_layout == "center|center",
+        f"{avatar_text} / {avatar_layout}",
+    )
+    report.check("profile name is not empty", page.inner_text("#user-display-name").strip() != "")
+    report.check("profile role is not empty", page.inner_text("#user-display-role").strip() != "")
+
+    # A very long name must truncate inside the profile block instead of
+    # squeezing the avatar into an oval or widening the sidebar.
+    original_name = page.inner_text("#user-display-name")
+    page.evaluate(
+        "(value) => { document.getElementById('user-display-name').textContent = value; }",
+        "Extraordinarily Long Supervisor Name That Must Not Break The Layout",
+    )
+    page.wait_for_timeout(150)
+    long_avatar = avatar.bounding_box()
+    sidebar_box = page.locator("#sidebar-nav").bounding_box()
+    name_overflow = page.evaluate(
+        "(() => { const el = document.getElementById('user-display-name');"
+        " return el.scrollWidth - el.clientWidth; })()"
+    )
+    report.check(
+        "long profile names keep the avatar circular",
+        bool(long_avatar)
+        and abs(long_avatar["width"] - 40) <= 0.5
+        and abs(long_avatar["height"] - 40) <= 0.5,
+        str(long_avatar),
+    )
+    report.check(
+        "long profile names do not widen the sidebar",
+        bool(sidebar_box) and abs(sidebar_box["width"] - 260) <= 1,
+        str(sidebar_box),
+    )
+    report.check("long profile names truncate instead of overflowing", name_overflow > 0, f"{name_overflow}px")
+    page.evaluate(
+        "(value) => { document.getElementById('user-display-name').textContent = value; }",
+        original_name,
+    )
+
+    logout = page.locator("#logout-btn")
+    logout_box = logout.bounding_box()
+    report.check(
+        "sign-out is visible and a usable target on desktop",
+        logout.is_visible() and bool(logout_box)
+        and logout_box["width"] >= 32 and logout_box["height"] >= 32,
+        str(logout_box),
+    )
+
+    # Tablet: the sidebar is still fixed, the action row must not break, and any
+    # table overflow is contained inside its scroll container.
+    page.set_viewport_size({"width": 1024, "height": 768})
+    page.wait_for_timeout(350)
+    boxes = [page.locator("#supervisors-table-body tr").first.locator(".table-actions .btn").nth(i).bounding_box()
+             for i in range(4)]
+    if all(boxes):
+        tops = [box["y"] for box in boxes]
+        report.check("tablet keeps supervisor actions on one row", max(tops) - min(tops) <= 1.5, str(tops))
+    page_overflow = page.evaluate(
+        "document.documentElement.scrollWidth - document.documentElement.clientWidth"
+    )
+    report.check("tablet layout has no page-wide horizontal scroll", page_overflow <= 1, f"{page_overflow}px")
+
+    # Phone: the action group collapses to a 2 x 2 grid inside the table cell.
+    page.set_viewport_size({"width": 375, "height": 700})
+    page.wait_for_timeout(350)
+    page.click("#mobile-toggle")
+    page.wait_for_timeout(400)
+    page.click("#menu-supervisors")
+    page.wait_for_timeout(600)
+    report.check(
+        "phone collapses supervisor actions to a 2 x 2 grid",
+        page.evaluate(
+            "getComputedStyle(document.querySelector('#supervisors-table-body .table-actions')).display"
+        ) == "grid",
+    )
+    report.check(
+        "phone action buttons stay in Edit/Reset/Deactivate/Delete order",
+        [page.locator("#supervisors-table-body tr").first.locator(".table-actions .btn").nth(i)
+         .inner_text().strip().lower() for i in range(4)]
+        == ["edit", "reset", "deactivate", "delete"],
+    )
+    phone_overflow = page.evaluate(
+        "document.documentElement.scrollWidth - document.documentElement.clientWidth"
+    )
+    report.check("phone management view has no page-wide horizontal scroll", phone_overflow <= 1,
+                 f"{phone_overflow}px")
+    page.locator("#supervisors-table-body .table-actions").first.scroll_into_view_if_needed()
+    page.wait_for_timeout(250)
+    page.screenshot(path=str(artifacts / "12-mobile-supervisor-actions.png"))
+
+    # Restore the desktop viewport for the remaining tests.
+    page.set_viewport_size({"width": 1600, "height": 1000})
+    page.wait_for_timeout(350)
+    page.click("#menu-servants")
+    page.wait_for_selector("#servants-table-body tr .table-actions")
+    page.wait_for_timeout(700)
+    servant_actions = page.locator("#servants-table-body tr").first.locator(".table-actions .btn")
+    report.check(
+        "servant row shows four actions for the owner",
+        servant_actions.count() == 4,
+        f"{servant_actions.count()} buttons",
+    )
+    servant_boxes = [servant_actions.nth(i).bounding_box() for i in range(servant_actions.count())]
+    if all(servant_boxes):
+        tops = [box["y"] for box in servant_boxes]
+        report.check("servant actions share one row", max(tops) - min(tops) <= 1.5, str(tops))
+    page.screenshot(path=str(artifacts / "13-servants-actions.png"))
+
+
 def check_run_modal(page, db: Path, artifacts: Path, report: Report, salary_id: int,
                     line_count: int, total: int) -> None:
     print("\n== owner: payroll run detail modal ==")
@@ -347,6 +509,21 @@ def check_mobile_navigation(page, base: str, db: Path, artifacts: Path, report: 
     )
     page.screenshot(path=str(artifacts / "8-mobile-drawer.png"))
 
+    # The drawer must be closable without reaching for the covered top bar.
+    close_btn = page.locator("#sidebar-close-btn")
+    report.check("drawer has an in-drawer close button", close_btn.is_visible())
+    close_box = close_btn.bounding_box()
+    report.check(
+        "drawer close button is a 40px+ tap target",
+        bool(close_box) and close_box["width"] >= 40 and close_box["height"] >= 40,
+        str(close_box),
+    )
+    close_btn.click()
+    page.wait_for_timeout(400)
+    report.check("close button closes the drawer", not page.is_visible("#sidebar-nav"))
+    toggle.click()
+    page.wait_for_timeout(400)
+
     # Click the dimmed area to the right of the 280px drawer.
     page.mouse.click(355, 350)
     page.wait_for_timeout(400)
@@ -541,6 +718,7 @@ def main() -> int:
             print("\n== owner: sign in ==")
             sign_in(page, base, OWNER, report)
 
+            check_management_tables(page, artifacts, report)
             check_run_modal(page, db, artifacts, report, salary_id, line_count, total)
             check_supervisor_sections(page, artifacts, report)
             check_attendance_history(page, artifacts, report)

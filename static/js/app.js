@@ -230,9 +230,18 @@ function applyRoleNavigation() {
 
 function renderUserBadge() {
     const user = state.user;
-    const initials = user.name.split(' ').map((part) => part[0]).join('').substring(0, 2).toUpperCase();
+    const initials = user.name
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((part) => part[0])
+        .join('')
+        .substring(0, 2)
+        .toUpperCase() || '?';
     $('user-avatar').textContent = initials;
-    $('user-display-name').textContent = user.name;
+    const nameEl = $('user-display-name');
+    nameEl.textContent = user.name;
+    // The sidebar truncates long names; the tooltip keeps the full value.
+    nameEl.title = user.name;
     $('user-display-role').textContent = user.role.charAt(0).toUpperCase() + user.role.slice(1);
 }
 
@@ -292,6 +301,18 @@ function setSidebarOpen(open) {
     // Swap the hamburger for a close icon while the drawer is open.
     toggle.innerHTML = `<i data-feather="${open ? 'x' : 'menu'}"></i>`;
     refreshIcons();
+
+    // The backdrop covers the top-bar toggle while the drawer is open, so the
+    // in-drawer close button receives focus; closing returns focus to the
+    // hamburger so keyboard users are never dropped at the top of the page.
+    const isDrawer = window.matchMedia('(max-width: 768px)').matches;
+    if (!isDrawer) return;
+    if (open) {
+        const closeBtn = $('sidebar-close-btn');
+        if (closeBtn) closeBtn.focus({ preventScroll: true });
+    } else if (sidebar.contains(document.activeElement)) {
+        toggle.focus({ preventScroll: true });
+    }
 }
 
 function closeSidebar() {
@@ -538,12 +559,14 @@ async function loadSupervisors() {
             <td><div class="section-badges">${sectionBadges(user)}</div></td>
             <td>${user.is_active ? '<span class="badge badge-success">Active</span>' : '<span class="badge badge-danger">Inactive</span>'}</td>
             <td>
-                <button class="btn btn-secondary btn-sm" data-action="edit-user" data-id="${user.user_id}"><i data-feather="edit-2"></i> Edit</button>
-                <button class="btn btn-secondary btn-sm" data-action="reset-password" data-id="${user.user_id}" style="margin-left:6px;"><i data-feather="key"></i> Reset</button>
-                <button class="btn ${user.is_active ? 'btn-secondary' : 'btn-primary'} btn-sm" data-action="toggle-user-active" data-id="${user.user_id}" data-active="${user.is_active ? '0' : '1'}" style="margin-left:6px;">
-                    <i data-feather="${user.is_active ? 'user-x' : 'user-check'}"></i> ${user.is_active ? 'Deactivate' : 'Activate'}
-                </button>
-                <button class="btn btn-danger btn-sm" data-action="delete-user" data-id="${user.user_id}" style="margin-left:6px;"><i data-feather="trash-2"></i> Delete</button>
+                <div class="table-actions">
+                    <button class="btn btn-secondary btn-sm" data-action="edit-user" data-id="${user.user_id}"><i data-feather="edit-2"></i> Edit</button>
+                    <button class="btn btn-secondary btn-sm" data-action="reset-password" data-id="${user.user_id}"><i data-feather="key"></i> Reset</button>
+                    <button class="btn ${user.is_active ? 'btn-secondary' : 'btn-primary'} btn-sm" data-action="toggle-user-active" data-id="${user.user_id}" data-active="${user.is_active ? '0' : '1'}">
+                        <i data-feather="${user.is_active ? 'user-x' : 'user-check'}"></i> ${user.is_active ? 'Deactivate' : 'Activate'}
+                    </button>
+                    <button class="btn btn-danger btn-sm" data-action="delete-user" data-id="${user.user_id}"><i data-feather="trash-2"></i> Delete</button>
+                </div>
             </td>
         </tr>`).join('') : emptyRow(7, 'No supervisors yet. Add the first one.');
     refreshIcons();
@@ -565,10 +588,12 @@ async function loadServants() {
             <td>${esc(user.phone)}</td>
             <td>${user.is_active ? '<span class="badge badge-success">Active</span>' : '<span class="badge badge-danger">Inactive</span>'}</td>
             <td>
-                <button class="btn btn-secondary btn-sm" data-action="edit-user" data-id="${user.user_id}"><i data-feather="edit-2"></i> Edit</button>
-                ${isOwner ? `<button class="btn btn-secondary btn-sm" data-action="reset-password" data-id="${user.user_id}" style="margin-left:6px;"><i data-feather="key"></i> Reset</button>` : ''}
-                ${isOwner ? `<button class="btn ${user.is_active ? 'btn-secondary' : 'btn-primary'} btn-sm" data-action="toggle-user-active" data-id="${user.user_id}" data-active="${user.is_active ? '0' : '1'}" style="margin-left:6px;"><i data-feather="${user.is_active ? 'user-x' : 'user-check'}"></i> ${user.is_active ? 'Deactivate' : 'Activate'}</button>` : ''}
-                ${isOwner ? `<button class="btn btn-danger btn-sm" data-action="delete-user" data-id="${user.user_id}" style="margin-left:6px;"><i data-feather="trash-2"></i> Delete</button>` : ''}
+                <div class="table-actions">
+                    <button class="btn btn-secondary btn-sm" data-action="edit-user" data-id="${user.user_id}"><i data-feather="edit-2"></i> Edit</button>
+                    ${isOwner ? `<button class="btn btn-secondary btn-sm" data-action="reset-password" data-id="${user.user_id}"><i data-feather="key"></i> Reset</button>` : ''}
+                    ${isOwner ? `<button class="btn ${user.is_active ? 'btn-secondary' : 'btn-primary'} btn-sm" data-action="toggle-user-active" data-id="${user.user_id}" data-active="${user.is_active ? '0' : '1'}"><i data-feather="${user.is_active ? 'user-x' : 'user-check'}"></i> ${user.is_active ? 'Deactivate' : 'Activate'}</button>` : ''}
+                    ${isOwner ? `<button class="btn btn-danger btn-sm" data-action="delete-user" data-id="${user.user_id}"><i data-feather="trash-2"></i> Delete</button>` : ''}
+                </div>
             </td>
         </tr>`).join('') : emptyRow(7, 'No servants registered yet.');
     refreshIcons();
@@ -1313,8 +1338,29 @@ function bindEvents() {
     $('password-form').addEventListener('submit', changePassword);
 
     document.querySelectorAll('.menu-item').forEach((item) => {
+        // <li> is not focusable by default; make the menu operable by keyboard.
+        item.setAttribute('role', 'button');
+        item.setAttribute('tabindex', '0');
         item.addEventListener('click', () => switchTab(item.dataset.tab));
+        item.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                switchTab(item.dataset.tab);
+            }
+        });
     });
+
+    // Leaving the drawer breakpoint (tablet landscape / desktop) must clear
+    // the open state so a later resize back to phone width starts closed.
+    const mobileDrawerQuery = window.matchMedia('(max-width: 768px)');
+    const handleDrawerBreakpoint = (event) => {
+        if (!event.matches) closeSidebar();
+    };
+    if (typeof mobileDrawerQuery.addEventListener === 'function') {
+        mobileDrawerQuery.addEventListener('change', handleDrawerBreakpoint);
+    } else if (typeof mobileDrawerQuery.addListener === 'function') {
+        mobileDrawerQuery.addListener(handleDrawerBreakpoint);
+    }
 
     /* ---- navigation & generic ---- */
     registerAction('toggle-sidebar', toggleSidebar);
